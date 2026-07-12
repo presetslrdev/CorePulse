@@ -29,6 +29,7 @@ internal sealed class TrayAppContext : ApplicationContext
 
         var menu = new ContextMenuStrip();
         menu.Items.Add("Настройки…", null, (_, _) => ShowSettings());
+        menu.Items.Add("Проверить уведомление", null, (_, _) => SendTestNotification());
         _pauseItem = new ToolStripMenuItem("Пауза мониторинга") { CheckOnClick = true };
         _pauseItem.CheckedChanged += (_, _) => TogglePause();
         menu.Items.Add(_pauseItem);
@@ -84,6 +85,18 @@ internal sealed class TrayAppContext : ApplicationContext
     {
         if (_settings.NotificationsEnabled)
             _notifier.ShowAlert(alert, _processSampler.GetTopConsumers(3));
+    }
+
+    /// <summary>Показывает уведомление по текущему самому нагруженному ядру — для проверки, что тосты доходят.</summary>
+    private void SendTestNotification()
+    {
+        int maxCore = 0;
+        for (int i = 1; i < _sampler.CoreCount; i++)
+            if (_sampler.CoreLoads[i] > _sampler.CoreLoads[maxCore])
+                maxCore = i;
+
+        var alert = new LoadAlert(new[] { maxCore }, TimeSpan.FromSeconds(_settings.DurationSeconds));
+        _notifier.ShowAlert(alert, _processSampler.GetTopConsumers(3));
     }
 
     private void ShowSettings()
