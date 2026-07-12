@@ -1,4 +1,5 @@
 using CpuMonitorNotifier.Monitoring;
+using CpuMonitorNotifier.Tray;
 
 namespace CpuMonitorNotifier.App;
 
@@ -7,11 +8,14 @@ internal sealed class TrayAppContext : ApplicationContext
 {
     private readonly NotifyIcon _trayIcon;
     private readonly CpuSampler _sampler;
+    private readonly TrayIconRenderer _renderer = new();
     private readonly System.Windows.Forms.Timer _timer;
+    private readonly bool[] _alerts;
 
     public TrayAppContext()
     {
         _sampler = new CpuSampler();
+        _alerts = new bool[_sampler.CoreCount];
 
         var menu = new ContextMenuStrip();
         menu.Items.Add("Выход", null, (_, _) => ExitApp());
@@ -32,6 +36,7 @@ internal sealed class TrayAppContext : ApplicationContext
     private void OnTick()
     {
         _sampler.Sample();
+        _renderer.Apply(_trayIcon, _sampler.CoreLoads, _alerts);
 
         int maxCore = 0;
         for (int i = 1; i < _sampler.CoreCount; i++)
@@ -52,6 +57,7 @@ internal sealed class TrayAppContext : ApplicationContext
         _timer.Stop();
         _trayIcon.Visible = false;
         _trayIcon.Dispose();
+        _renderer.Dispose();
         _sampler.Dispose();
         Application.Exit();
     }
