@@ -1,4 +1,5 @@
 using CpuMonitorNotifier.Monitoring;
+using CpuMonitorNotifier.Notifications;
 using CpuMonitorNotifier.Tray;
 
 namespace CpuMonitorNotifier.App;
@@ -13,6 +14,7 @@ internal sealed class TrayAppContext : ApplicationContext
     private readonly ProcessSampler _processSampler = new();
     private readonly LoadDetector _detector;
     private readonly TrayIconRenderer _renderer = new();
+    private readonly ToastNotifier _notifier = new();
     private readonly System.Windows.Forms.Timer _timer;
 
     public TrayAppContext()
@@ -63,17 +65,7 @@ internal sealed class TrayAppContext : ApplicationContext
 
     private void OnAlert(LoadAlert alert)
     {
-        // Пока нотификации не подключены (следующий этап) — balloon tip как заглушка
-        string cores = string.Join(", ", alert.Cores);
-        var culprits = _processSampler.GetTopConsumers(3);
-        string detail = culprits.Count > 0
-            ? "Вероятно: " + string.Join(", ", culprits.Select(c => $"{c.Name} ({c.Cores * 100:F0}%)"))
-            : "Виновник не определён";
-
-        _trayIcon.ShowBalloonTip(10000,
-            $"Ядра под нагрузкой: {cores}",
-            $"Дольше {alert.Duration.TotalSeconds:F0} с выше порога. {detail}",
-            ToolTipIcon.Warning);
+        _notifier.ShowAlert(alert, _processSampler.GetTopConsumers(3));
     }
 
     private void SetTooltip(string text)
@@ -89,6 +81,7 @@ internal sealed class TrayAppContext : ApplicationContext
         _trayIcon.Dispose();
         _renderer.Dispose();
         _sampler.Dispose();
+        _notifier.Dispose();
         Application.Exit();
     }
 }
