@@ -1,5 +1,6 @@
 using CpuMonitorNotifier.Monitoring;
 using CpuMonitorNotifier.Notifications;
+using CpuMonitorNotifier.Settings;
 using CpuMonitorNotifier.Tray;
 
 namespace CpuMonitorNotifier.App;
@@ -7,8 +8,7 @@ namespace CpuMonitorNotifier.App;
 /// <summary>Хост tray-приложения: иконка, меню, таймер опроса, жизненный цикл.</summary>
 internal sealed class TrayAppContext : ApplicationContext
 {
-    private const int IntervalSeconds = 1;
-
+    private readonly AppSettings _settings;
     private readonly NotifyIcon _trayIcon;
     private readonly CpuSampler _sampler;
     private readonly ProcessSampler _processSampler = new();
@@ -16,14 +16,23 @@ internal sealed class TrayAppContext : ApplicationContext
     private readonly TrayIconRenderer _renderer = new();
     private readonly ToastNotifier _notifier = new();
     private readonly System.Windows.Forms.Timer _timer;
+    private readonly ToolStripMenuItem _pauseItem;
+    private SettingsForm? _settingsForm;
 
     public TrayAppContext()
     {
+        _settings = AppSettings.Load();
         _sampler = new CpuSampler();
         _detector = new LoadDetector(_sampler.CoreCount);
         _detector.Alert += OnAlert;
+        ApplySettings();
 
         var menu = new ContextMenuStrip();
+        menu.Items.Add("Настройки…", null, (_, _) => ShowSettings());
+        _pauseItem = new ToolStripMenuItem("Пауза мониторинга") { CheckOnClick = true };
+        _pauseItem.CheckedChanged += (_, _) => TogglePause();
+        menu.Items.Add(_pauseItem);
+        menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Выход", null, (_, _) => ExitApp());
 
         _trayIcon = new NotifyIcon
@@ -33,17 +42,25 @@ internal sealed class TrayAppContext : ApplicationContext
             ContextMenuStrip = menu,
             Visible = true,
         };
+        _trayIcon.DoubleClick += (_, _) => ShowSettings();
 
-        _timer = new System.Windows.Forms.Timer { Interval = IntervalSeconds * 1000 };
+        _timer = new System.Windows.Forms.Timer { Interval = _settings.PollIntervalSeconds * 1000 };
         _timer.Tick += (_, _) => OnTick();
         _timer.Start();
+    }
+
+    private void ApplySettings()
+    {
+        _detector.ThresholdPercent = _settings.ThresholdPercent;
+        _detector.DurationSeconds = _settings.DurationSeconds;
+        _detector.Cooldown = TimeSpan.FromMinutes(_settings.CooldownMinutes);
     }
 
     private void OnTick()
     {
         _sampler.Sample();
         _processSampler.Sample();
-        _detector.Update(_sampler.CoreLoads, IntervalSeconds, DateTime.Now);
+        _detector.Update(_sampler.CoreLoads, _settings.PollIntervalSeconds, DateTime.Now);
         _renderer.Apply(_trayIcon, _sampler.CoreLoads, _detector.ActiveAlerts);
         SetTooltip(BuildTooltip());
     }
@@ -65,7 +82,42 @@ internal sealed class TrayAppContext : ApplicationContext
 
     private void OnAlert(LoadAlert alert)
     {
-        _notifier.ShowAlert(alert, _processSampler.GetTopConsumers(3));
+        if (_settings.NotificationsEnabled)
+            _notifier.ShowAlert(alert, _processSampler.GetTopConsumers(3));
+    }
+
+    private void ShowSettings()
+    {
+        if (_settingsForm is { IsDisposed: false })
+        {
+            _settingsForm.Activate();
+            return;
+        }
+
+        _settingsForm = new SettingsForm(_settings);
+        if (_settingsForm.ShowDialog() == DialogResult.OK)
+        {
+            _settingsForm.ApplyTo(_settings);
+            _settings.Save();
+            ApplySettings();
+            _timer.Interval = _settings.PollIntervalSeconds * 1000;
+        }
+        _settingsForm.Dispose();
+        _settingsForm = null;
+    }
+
+    private void TogglePause()
+    {
+        if (_pauseItem.Checked)
+        {
+            _timer.Stop();
+            _trayIcon.Icon = SystemIcons.Application;
+            SetTooltip("CPU Monitor Notifier — пауза");
+        }
+        else
+        {
+            _timer.Start();
+        }
     }
 
     private void SetTooltip(string text)

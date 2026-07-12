@@ -1,0 +1,39 @@
+using System.Text.Json;
+
+namespace CpuMonitorNotifier.Settings;
+
+/// <summary>Настройки приложения. Хранятся в %AppData%\CpuMonitorNotifier\settings.json.</summary>
+internal sealed class AppSettings
+{
+    public float ThresholdPercent { get; set; } = 90f;
+    public int DurationSeconds { get; set; } = 60;
+    public int CooldownMinutes { get; set; } = 5;
+    public bool NotificationsEnabled { get; set; } = true;
+    public int PollIntervalSeconds { get; set; } = 1;
+
+    private static readonly string FilePath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "CpuMonitorNotifier", "settings.json");
+
+    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+
+    public static AppSettings Load()
+    {
+        try
+        {
+            if (File.Exists(FilePath))
+                return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(FilePath)) ?? new AppSettings();
+        }
+        catch
+        {
+            // повреждённый файл — стартуем с дефолтами
+        }
+        return new AppSettings();
+    }
+
+    public void Save()
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
+        File.WriteAllText(FilePath, JsonSerializer.Serialize(this, JsonOptions));
+    }
+}
