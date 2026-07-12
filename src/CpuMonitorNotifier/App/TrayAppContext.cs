@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using CpuMonitorNotifier.Monitoring;
 using CpuMonitorNotifier.Notifications;
 using CpuMonitorNotifier.Settings;
@@ -5,9 +6,11 @@ using CpuMonitorNotifier.Tray;
 
 namespace CpuMonitorNotifier.App;
 
-/// <summary>Хост tray-приложения: иконка, меню, таймер опроса, жизненный цикл.</summary>
+/// <summary>Хост tray-приложения: иконка, меню, таймеры опроса и анимации, жизненный цикл.</summary>
 internal sealed class TrayAppContext : ApplicationContext
 {
+    private const int RenderIntervalMs = 125; // частота перерисовки «живой» иконки
+
     private readonly AppSettings _settings;
     private readonly NotifyIcon _trayIcon;
     private readonly CpuSampler _sampler;
@@ -15,7 +18,9 @@ internal sealed class TrayAppContext : ApplicationContext
     private readonly LoadDetector _detector;
     private readonly TrayIconRenderer _renderer = new();
     private readonly ToastNotifier _notifier = new();
-    private readonly System.Windows.Forms.Timer _timer;
+    private readonly System.Windows.Forms.Timer _sampleTimer;
+    private readonly System.Windows.Forms.Timer _renderTimer;
+    private readonly Stopwatch _clock = Stopwatch.StartNew();
     private readonly ToolStripMenuItem _pauseItem;
     private SettingsForm? _settingsForm;
 
@@ -45,9 +50,15 @@ internal sealed class TrayAppContext : ApplicationContext
         };
         _trayIcon.DoubleClick += (_, _) => ShowSettings();
 
-        _timer = new System.Windows.Forms.Timer { Interval = _settings.PollIntervalSeconds * 1000 };
-        _timer.Tick += (_, _) => OnTick();
-        _timer.Start();
+        _sampleTimer = new System.Windows.Forms.Timer { Interval = _settings.PollIntervalSeconds * 1000 };
+        _sampleTimer.Tick += (_, _) => OnSample();
+        _sampleTimer.Start();
+
+        _renderTimer = new System.Windows.Forms.Timer { Interval = RenderIntervalMs };
+        _renderTimer.Tick += (_, _) => Render();
+        _renderTimer.Start();
+
+        OnSample(); // мгновенный первый замер, не дожидаясь секундного тика
     }
 
     private void ApplySettings()
@@ -55,15 +66,22 @@ internal sealed class TrayAppContext : ApplicationContext
         _detector.ThresholdPercent = _settings.ThresholdPercent;
         _detector.DurationSeconds = _settings.DurationSeconds;
         _detector.Cooldown = TimeSpan.FromMinutes(_settings.CooldownMinutes);
+        _renderer.Style = _settings.IconStyle;
     }
 
-    private void OnTick()
+    /// <summary>Секундный тик: замер нагрузки, детекция, обновление подсказки.</summary>
+    private void OnSample()
     {
         _sampler.Sample();
         _processSampler.Sample();
         _detector.Update(_sampler.CoreLoads, _settings.PollIntervalSeconds, DateTime.Now);
-        _renderer.Apply(_trayIcon, _sampler.CoreLoads, _detector.ActiveAlerts);
         SetTooltip(BuildTooltip());
+    }
+
+    /// <summary>Частый тик: перерисовка иконки с текущей фазой анимации.</summary>
+    private void Render()
+    {
+        _renderer.Apply(_trayIcon, _sampler.CoreLoads, _detector.ActiveAlerts, _clock.Elapsed.TotalSeconds);
     }
 
     private string BuildTooltip()
@@ -73,7 +91,8 @@ internal sealed class TrayAppContext : ApplicationContext
             if (_sampler.CoreLoads[i] > _sampler.CoreLoads[maxCore])
                 maxCore = i;
 
-        string text = $"CPU {_sampler.TotalLoad:F0}% | ядро {maxCore}: {_sampler.CoreLoads[maxCore]:F0}%";
+        // самое горячее ядро — ведущая информация
+        string text = $"Ядро {maxCore}: {_sampler.CoreLoads[maxCore]:F0}% | CPU {_sampler.TotalLoad:F0}%";
 
         var top = _processSampler.GetTopConsumers(1);
         if (top.Count > 0 && top[0].Cores >= 0.5)
@@ -113,7 +132,7 @@ internal sealed class TrayAppContext : ApplicationContext
             _settingsForm.ApplyTo(_settings);
             _settings.Save();
             ApplySettings();
-            _timer.Interval = _settings.PollIntervalSeconds * 1000;
+            _sampleTimer.Interval = _settings.PollIntervalSeconds * 1000;
         }
         _settingsForm.Dispose();
         _settingsForm = null;
@@ -123,13 +142,15 @@ internal sealed class TrayAppContext : ApplicationContext
     {
         if (_pauseItem.Checked)
         {
-            _timer.Stop();
+            _sampleTimer.Stop();
+            _renderTimer.Stop();
             _trayIcon.Icon = SystemIcons.Application;
             SetTooltip("CPU Monitor Notifier — пауза");
         }
         else
         {
-            _timer.Start();
+            _sampleTimer.Start();
+            _renderTimer.Start();
         }
     }
 
@@ -141,7 +162,8 @@ internal sealed class TrayAppContext : ApplicationContext
 
     private void ExitApp()
     {
-        _timer.Stop();
+        _sampleTimer.Stop();
+        _renderTimer.Stop();
         _trayIcon.Visible = false;
         _trayIcon.Dispose();
         _renderer.Dispose();

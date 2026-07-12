@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using CpuMonitorNotifier.Tray;
 
 namespace CpuMonitorNotifier.Settings;
 
@@ -10,19 +12,24 @@ internal sealed class AppSettings
     public int CooldownMinutes { get; set; } = 5;
     public bool NotificationsEnabled { get; set; } = true;
     public int PollIntervalSeconds { get; set; } = 1;
+    public TrayIconStyle IconStyle { get; set; } = TrayIconStyle.Ring;
 
     private static readonly string FilePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "CpuMonitorNotifier", "settings.json");
 
-    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        WriteIndented = true,
+        Converters = { new JsonStringEnumConverter() }, // IconStyle сохраняем строкой
+    };
 
     public static AppSettings Load()
     {
         try
         {
             if (File.Exists(FilePath))
-                return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(FilePath)) ?? new AppSettings();
+                return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(FilePath), JsonOptions) ?? new AppSettings();
         }
         catch
         {
