@@ -10,6 +10,17 @@ internal static class Program
             return; // уже запущен — вторую иконку не создаём
 
         ApplicationConfiguration.Initialize();
-        Application.Run(new App.TrayAppContext());
+        try
+        {
+            Application.Run(new App.TrayAppContext());
+        }
+        catch (Exception ex)
+        {
+            // типовой случай — отключённые/повреждённые счётчики производительности (lodctr /R лечит)
+            MessageBox.Show(
+                $"Не удалось запустить мониторинг:\n\n{ex.Message}",
+                "CPU Monitor Notifier",
+                MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
     }
 }

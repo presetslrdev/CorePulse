@@ -49,9 +49,16 @@ internal sealed class CpuSampler : IDisposable
     /// <summary>Снимает свежие значения по всем ядрам. Вызывать не чаще раза в секунду.</summary>
     public void Sample()
     {
-        for (int i = 0; i < _coreCounters.Length; i++)
-            CoreLoads[i] = Math.Clamp(_coreCounters[i].NextValue(), 0f, 100f);
-        TotalLoad = Math.Clamp(_totalCounter.NextValue(), 0f, 100f);
+        try
+        {
+            for (int i = 0; i < _coreCounters.Length; i++)
+                CoreLoads[i] = Math.Clamp(_coreCounters[i].NextValue(), 0f, 100f);
+            TotalLoad = Math.Clamp(_totalCounter.NextValue(), 0f, 100f);
+        }
+        catch (InvalidOperationException)
+        {
+            // счётчик мог пропасть (например, после сна) — оставляем предыдущие значения
+        }
     }
 
     private static int ParseGroup(string instance) => ParsePart(instance, 0);
