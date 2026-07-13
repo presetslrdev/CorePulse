@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using CpuMonitorNotifier.Localization;
 using CpuMonitorNotifier.Tray;
 
 namespace CpuMonitorNotifier.Settings;
@@ -13,6 +14,7 @@ internal sealed class AppSettings
     public bool NotificationsEnabled { get; set; } = true;
     public int PollIntervalSeconds { get; set; } = 1;
     public TrayIconStyle IconStyle { get; set; } = TrayIconStyle.Ring;
+    public AppLanguage Language { get; set; } = AppLanguage.Auto;
 
     private static readonly string FilePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),

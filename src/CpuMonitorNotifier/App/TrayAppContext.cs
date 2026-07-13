@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Globalization;
+using CpuMonitorNotifier.Localization;
 using CpuMonitorNotifier.Monitoring;
 using CpuMonitorNotifier.Notifications;
 using CpuMonitorNotifier.Settings;
@@ -21,7 +23,10 @@ internal sealed class TrayAppContext : ApplicationContext
     private readonly System.Windows.Forms.Timer _sampleTimer;
     private readonly System.Windows.Forms.Timer _renderTimer;
     private readonly Stopwatch _clock = Stopwatch.StartNew();
+    private readonly ToolStripMenuItem _settingsItem;
+    private readonly ToolStripMenuItem _testItem;
     private readonly ToolStripMenuItem _pauseItem;
+    private readonly ToolStripMenuItem _exitItem;
     private SettingsForm? _settingsForm;
 
     public TrayAppContext()
@@ -33,22 +38,26 @@ internal sealed class TrayAppContext : ApplicationContext
         ApplySettings();
 
         var menu = new ContextMenuStrip();
-        menu.Items.Add("Настройки…", null, (_, _) => ShowSettings());
-        menu.Items.Add("Проверить уведомление", null, (_, _) => SendTestNotification());
-        _pauseItem = new ToolStripMenuItem("Пауза мониторинга") { CheckOnClick = true };
+        _settingsItem = new ToolStripMenuItem(string.Empty, null, (_, _) => ShowSettings());
+        _testItem = new ToolStripMenuItem(string.Empty, null, (_, _) => SendTestNotification());
+        _pauseItem = new ToolStripMenuItem { CheckOnClick = true };
         _pauseItem.CheckedChanged += (_, _) => TogglePause();
+        _exitItem = new ToolStripMenuItem(string.Empty, null, (_, _) => ExitApp());
+        menu.Items.Add(_settingsItem);
+        menu.Items.Add(_testItem);
         menu.Items.Add(_pauseItem);
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Выход", null, (_, _) => ExitApp());
+        menu.Items.Add(_exitItem);
 
         _trayIcon = new NotifyIcon
         {
             Icon = SystemIcons.Application,
-            Text = "CPU Monitor Notifier",
+            Text = Loc.AppName,
             ContextMenuStrip = menu,
             Visible = true,
         };
         _trayIcon.DoubleClick += (_, _) => ShowSettings();
+        LocalizeMenu();
 
         _sampleTimer = new System.Windows.Forms.Timer { Interval = _settings.PollIntervalSeconds * 1000 };
         _sampleTimer.Tick += (_, _) => OnSample();
@@ -63,10 +72,19 @@ internal sealed class TrayAppContext : ApplicationContext
 
     private void ApplySettings()
     {
+        Loc.Apply(_settings.Language);
         _detector.ThresholdPercent = _settings.ThresholdPercent;
         _detector.DurationSeconds = _settings.DurationSeconds;
         _detector.Cooldown = TimeSpan.FromMinutes(_settings.CooldownMinutes);
         _renderer.Style = _settings.IconStyle;
+    }
+
+    private void LocalizeMenu()
+    {
+        _settingsItem.Text = Loc.T("menu.settings");
+        _testItem.Text = Loc.T("menu.test");
+        _pauseItem.Text = Loc.T("menu.pause");
+        _exitItem.Text = Loc.T("menu.exit");
     }
 
     /// <summary>Секундный тик: замер нагрузки, детекция, обновление подсказки.</summary>
@@ -91,13 +109,16 @@ internal sealed class TrayAppContext : ApplicationContext
             if (_sampler.CoreLoads[i] > _sampler.CoreLoads[maxCore])
                 maxCore = i;
 
-        // самое горячее ядро — ведущая информация
-        string text = $"Ядро {maxCore}: {_sampler.CoreLoads[maxCore]:F0}% | CPU {_sampler.TotalLoad:F0}%";
+        var c = CultureInfo.CurrentCulture;
+        string core = maxCore.ToString(c);
+        string coreLoad = _sampler.CoreLoads[maxCore].ToString("F0", c);
+        string cpu = _sampler.TotalLoad.ToString("F0", c);
 
+        // самое горячее ядро — ведущая информация
         var top = _processSampler.GetTopConsumers(1);
-        if (top.Count > 0 && top[0].Cores >= 0.5)
-            text += $" | {top[0].Name}";
-        return text;
+        return top.Count > 0 && top[0].Cores >= 0.5
+            ? string.Format(Loc.T("tooltip.proc"), core, coreLoad, cpu, top[0].Name)
+            : string.Format(Loc.T("tooltip.noproc"), core, coreLoad, cpu);
     }
 
     private void OnAlert(LoadAlert alert)
@@ -132,7 +153,9 @@ internal sealed class TrayAppContext : ApplicationContext
             _settingsForm.ApplyTo(_settings);
             _settings.Save();
             ApplySettings();
+            LocalizeMenu(); // язык мог смениться
             _sampleTimer.Interval = _settings.PollIntervalSeconds * 1000;
+            SetTooltip(BuildTooltip());
         }
         _settingsForm.Dispose();
         _settingsForm = null;
@@ -145,7 +168,7 @@ internal sealed class TrayAppContext : ApplicationContext
             _sampleTimer.Stop();
             _renderTimer.Stop();
             _trayIcon.Icon = SystemIcons.Application;
-            SetTooltip("CPU Monitor Notifier — пауза");
+            SetTooltip(string.Format(Loc.T("app.paused"), Loc.AppName));
         }
         else
         {

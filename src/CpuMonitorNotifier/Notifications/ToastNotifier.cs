@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Globalization;
+using CpuMonitorNotifier.Localization;
 using CpuMonitorNotifier.Monitoring;
 using Microsoft.Toolkit.Uwp.Notifications;
 
@@ -16,20 +18,20 @@ internal sealed class ToastNotifier : IDisposable
 
     public void ShowAlert(LoadAlert alert, IReadOnlyList<ProcessLoad> culprits)
     {
-        string coresText = alert.Cores.Length == 1
-            ? $"Ядро {alert.Cores[0]}"
-            : $"Ядра {string.Join(", ", alert.Cores)}";
+        string cores = string.Join(", ", alert.Cores);
+        string titleKey = alert.Cores.Length == 1 ? "toast.title.one" : "toast.title.many";
+        string title = string.Format(Loc.T(titleKey), cores, FormatDuration(alert.Duration));
 
-        string title = $"{coresText} под нагрузкой уже {FormatDuration(alert.Duration)}";
         string body = culprits.Count > 0
-            ? "Вероятный виновник: " + string.Join(", ", culprits.Select(c => $"{c.Name} ({c.Cores * 100:F0}% ядра)"))
-            : "Виновник не определён (возможно, системный или защищённый процесс)";
+            ? string.Format(Loc.T("toast.culprit"), string.Join(", ",
+                culprits.Select(c => string.Format(Loc.T("toast.core.load"), c.Name, (c.Cores * 100).ToString("F0", CultureInfo.CurrentCulture)))))
+            : Loc.T("toast.culprit.none");
 
         new ToastContentBuilder()
             .AddText(title)
             .AddText(body)
             .AddButton(new ToastButton()
-                .SetContent("Диспетчер задач")
+                .SetContent(Loc.T("toast.button.taskmgr"))
                 .AddArgument("action", ActionOpenTaskManager))
             .Show();
     }
@@ -50,8 +52,13 @@ internal sealed class ToastNotifier : IDisposable
         }
     }
 
-    private static string FormatDuration(TimeSpan d) =>
-        d.TotalMinutes >= 1 ? $"{d.TotalMinutes:F0} мин" : $"{d.TotalSeconds:F0} с";
+    private static string FormatDuration(TimeSpan d)
+    {
+        var c = CultureInfo.CurrentCulture;
+        return d.TotalMinutes >= 1
+            ? string.Format(Loc.T("duration.min"), d.TotalMinutes.ToString("F0", c))
+            : string.Format(Loc.T("duration.sec"), d.TotalSeconds.ToString("F0", c));
+    }
 
     public void Dispose()
     {

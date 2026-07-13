@@ -1,3 +1,6 @@
+using CpuMonitorNotifier.Localization;
+using CpuMonitorNotifier.Settings;
+
 namespace CpuMonitorNotifier;
 
 internal static class Program
@@ -9,6 +12,8 @@ internal static class Program
         if (!createdNew)
             return; // уже запущен — вторую иконку не создаём
 
+        Loc.Apply(AppSettings.Load().Language); // локализуем в т.ч. возможное сообщение об ошибке
+
         ApplicationConfiguration.Initialize();
         try
         {
@@ -18,8 +23,8 @@ internal static class Program
         {
             // типовой случай — отключённые/повреждённые счётчики производительности (lodctr /R лечит)
             MessageBox.Show(
-                $"Не удалось запустить мониторинг:\n\n{ex.Message}",
-                "CPU Monitor Notifier",
+                string.Format(Loc.T("error.startFailed"), ex.Message),
+                Loc.AppName,
                 MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
