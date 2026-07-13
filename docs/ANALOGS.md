@@ -1,43 +1,43 @@
-# Ревью аналогов
+# Competitive review
 
-Обзор существующих инструментов мониторинга CPU для Windows — что они умеют и чего не хватает
-для нашего сценария: *«заметить, что отдельное ядро долго под нагрузкой, и назвать виновника»*.
+An overview of existing Windows CPU-monitoring tools — what they do and what's missing for our
+scenario: *"notice that a single core has been under load for a while, and name the culprit."*
 
-## Сравнительная таблица
+## Comparison table
 
-| # | Аналог | Per-core нагрузка | Информативность трея | Алерты о длительной нагрузке | Показ процесса-виновника | Цена |
-|---|--------|-------------------|----------------------|------------------------------|--------------------------|------|
-| 1 | Диспетчер задач Windows (иконка в трее) | нет (общий %) | минимальная — одна зелёная шкала | нет | нет (только вручную) | встроен |
-| 2 | [XMeters](https://entropy6.com/xmeters/) | **да** (бары в taskbar) | высокая — per-core бары прямо в панели задач | нет | нет | free (personal) |
-| 3 | [SysStatsTray](https://apps.microsoft.com/detail/9nd57x1thnzm) | нет | средняя — динамические иконки, цвет зависит от нагрузки | нет | нет | free |
-| 4 | [Process Lasso](https://bitsum.com/) (ProBalance) | нет | средняя — график в трее | **да** — реагирует на процессы, злоупотребляющие CPU | **да** | freemium |
-| 5 | [HWiNFO](https://www.hwinfo.com/) | **да** (сенсоры каждого ядра) | средняя — можно вывести несколько значений отдельными tray-иконками | **да** — пороги по любому сенсору | нет | free |
-| 6 | [Libre Hardware Monitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) | **да** | средняя — выбранные сенсоры цифрами в трее | нет | нет | open source |
-| 7 | [Core Temp](https://www.alcpu.com/CoreTemp/) | per-core (температура) | средняя — температуры ядер в трее | да (перегрев) | нет | free |
-| 8 | [TrafficMonitor](https://github.com/zhongyang219/TrafficMonitor) | нет (общий CPU) | высокая — плавающее окно / встройка в taskbar | нет | нет | open source |
-| 9 | [tray-monitor](https://github.com/strayge/tray-monitor) | нет | высокая — графики-иконки в трее | нет | top-процессы по клику | open source |
-| 10 | Performance Monitor / perfmon (встроенный) | **да** (счётчики `Processor Information`) | нет | **да** — Data Collector Sets + алерты в журнал событий | нет | встроен |
+| # | Tool | Per-core load | Tray informativeness | Sustained-load alerts | Names the culprit | Price |
+|---|------|---------------|----------------------|-----------------------|-------------------|-------|
+| 1 | Windows Task Manager (tray icon) | ✗ (overall %) | minimal — a single green meter | ✗ | ✗ (manual only) | built-in |
+| 2 | [XMeters](https://entropy6.com/xmeters/) | **✓** (bars in taskbar) | high — per-core bars right in the taskbar | ✗ | ✗ | free (personal) |
+| 3 | [SysStatsTray](https://apps.microsoft.com/detail/9nd57x1thnzm) | ✗ | medium — dynamic icons, color by load | ✗ | ✗ | free |
+| 4 | [Process Lasso](https://bitsum.com/) (ProBalance) | ✗ | medium — graph in tray | **✓** — reacts to CPU-hogging processes | **✓** | freemium |
+| 5 | [HWiNFO](https://www.hwinfo.com/) | **✓** (per-core sensors) | medium — several values as separate tray icons | **✓** — thresholds on any sensor | ✗ | free |
+| 6 | [Libre Hardware Monitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) | **✓** | medium — chosen sensors as numbers in tray | ✗ | ✗ | open source |
+| 7 | [Core Temp](https://www.alcpu.com/CoreTemp/) | per-core (temperature) | medium — per-core temps in tray | yes (overheating) | ✗ | free |
+| 8 | [TrafficMonitor](https://github.com/zhongyang219/TrafficMonitor) | ✗ (overall CPU) | high — floating window / taskbar embed | ✗ | ✗ | open source |
+| 9 | [tray-monitor](https://github.com/strayge/tray-monitor) | ✗ | high — graph icons in tray | ✗ | top processes on click | open source |
+| 10 | Performance Monitor / perfmon (built-in) | **✓** (`Processor Information` counters) | ✗ | **✓** — Data Collector Sets + event-log alerts | ✗ | built-in |
 
-## Выводы
+## Conclusions
 
-1. **Per-core визуализацию** дают XMeters, HWiNFO, Libre Hardware Monitor — но ни один из них
-   не умеет *алертить* именно по длительной нагрузке отдельного ядра.
-2. **Алерты** есть у Process Lasso (по процессам, не по ядрам), HWiNFO (по порогам сенсоров,
-   без длительности и без виновника) и perfmon (мощно, но это инструмент администратора:
-   без уведомлений в UI, настройка через Data Collector Sets).
-3. **Виновника** называет только Process Lasso, но его модель — «процесс превысил общую квоту CPU»,
-   а не «ядро №5 занято на 100% уже минуту».
-4. Сценарий «одно залипшее ядро при низкой общей загрузке» **не покрыт никем**: на 16-ядерном CPU
-   зависший однопоточный процесс даёт ~6% общей загрузки и не триггерит ни один из инструментов выше.
+1. **Per-core visualization** is offered by XMeters, HWiNFO and Libre Hardware Monitor — but none of
+   them can *alert* specifically on a single core being under sustained load.
+2. **Alerts** exist in Process Lasso (by process, not by core), HWiNFO (by sensor thresholds, without
+   a duration condition and without a culprit) and perfmon (powerful, but an admin tool: no UI
+   notifications, configured through Data Collector Sets).
+3. **The culprit** is named only by Process Lasso, but its model is "a process exceeded its overall
+   CPU quota" — not "core #5 has been busy at 100% for a minute."
+4. The scenario *"one stuck core at low overall load"* is **covered by nobody**: on a 16-core CPU a
+   hung single-threaded process is ~6% overall and triggers none of the tools above.
 
-**Ниша CPU Monitor Notifier** — совместить три вещи, которые по отдельности уже существуют:
-per-core иконка в трее (как XMeters) + алерты с условием длительности (как ProBalance/perfmon) +
-указание процесса-виновника (как Process Lasso), в одном лёгком приложении без прав администратора.
+**CorePulse's niche** is to combine three things that already exist separately: a per-core tray icon
+(like XMeters) + alerts with a duration condition (like ProBalance/perfmon) + naming the responsible
+process (like Process Lasso), in one lightweight app that needs no administrator rights.
 
-## Источники
+## Sources
 
 - [How to Keep the Task Manager's CPU Stats In Your System Tray (How-To Geek)](https://www.howtogeek.com/685697/how-to-keep-the-task-managers-cpu-stats-in-your-system-tray/)
 - [How to Set Up Monitoring to Alert on Windows High System Usage (How-To Geek)](https://www.howtogeek.com/devops/how-to-set-up-monitoring-to-alert-on-windows-high-system-usage/)
-- [SysStatsTray в Microsoft Store](https://apps.microsoft.com/detail/9nd57x1thnzm)
-- [tray-monitor на GitHub](https://github.com/strayge/tray-monitor)
+- [SysStatsTray on the Microsoft Store](https://apps.microsoft.com/detail/9nd57x1thnzm)
+- [tray-monitor on GitHub](https://github.com/strayge/tray-monitor)
 - [Display CPU usage in systray (TenForums)](https://www.tenforums.com/software-apps/197164-display-cpu-usage-systray.html)

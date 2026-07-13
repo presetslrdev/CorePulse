@@ -1,78 +1,88 @@
-# Архитектура
+# Architecture
 
-## Стек
+## Stack
 
-- **C# / .NET 10**, WinForms как хост tray-приложения: `ApplicationContext` без главного окна,
-  единственное окно — настройки.
-- **Уведомления**: пакет `Microsoft.Toolkit.Uwp.Notifications` — Windows Toast для
-  unpackaged Win32-приложений (Windows 10/11).
-- Права администратора **не требуются**.
+- **C# / .NET 10**, WinForms as the tray-app host: an `ApplicationContext` with no main window; the
+  only window is Settings.
+- **Notifications**: the `Microsoft.Toolkit.Uwp.Notifications` package — Windows Toast for unpackaged
+  Win32 apps (Windows 10/11).
+- **No administrator rights required.**
 
-## Модули
+## Modules
 
 ```
-Program.cs               single-instance mutex → Application.Run(TrayAppContext)
-App/TrayAppContext.cs    композиция: таймер 1 c → CpuSampler → LoadDetector → Renderer/Notifier
+Program.cs                single-instance mutex → Application.Run(TrayAppContext)
+App/TrayAppContext.cs     composition: sample timer + render timer → CpuSampler → LoadDetector → Renderer/Notifier
 Monitoring/
-  CpuSampler.cs          per-core загрузка через PerformanceCounter
-  ProcessSampler.cs      дельты CPU-времени процессов → top-кандидаты
-  LoadDetector.cs        скользящее окно, гистерезис, cooldown → событие Alert
-Tray/TrayIconRenderer.cs GDI+ рендер per-core иконки + tooltip
+  CpuSampler.cs           per-core load via PerformanceCounter
+  ProcessSampler.cs       process CPU-time deltas → top candidates
+  LoadDetector.cs         sliding window, hysteresis, cooldown → Alert event
+Tray/
+  TrayIconStyle.cs        the five icon styles
+  TrayIconRenderer.cs     GDI+ rendering of the live per-core icon + tooltip
 Notifications/ToastNotifier.cs
+Localization/Localization.cs   8-language string tables, English fallback
 Settings/
-  AppSettings.cs         JSON в %AppData%\CpuMonitorNotifier\settings.json
-  AutoStart.cs           HKCU\Software\Microsoft\Windows\CurrentVersion\Run
-  SettingsForm.cs        окно настроек
+  AppSettings.cs          JSON in %AppData%\CpuMonitorNotifier\settings.json
+  AutoStart.cs            HKCU\Software\Microsoft\Windows\CurrentVersion\Run
+  SettingsForm.cs         settings window
 ```
 
-## Ключевые решения
+## Key decisions
 
-### Сбор per-core нагрузки
+### Collecting per-core load
 
-Счётчики `Processor Information(*)\% Processor Utility` — в отличие от `% Processor Time`
-корректно учитывают turbo boost и parking на современных CPU (могут показывать >100%,
-клампим до 100). Fallback на `% Processor Time`, если `% Processor Utility` недоступен.
-Опрос раз в 1 секунду; первый снятый сэмпл PDH-счётчика всегда 0 — прогреваем при старте.
+The `Processor Information(*)\% Processor Utility` counters — unlike `% Processor Time` — correctly
+account for turbo boost and core parking on modern CPUs (they can read above 100%, so we clamp to
+100). Falls back to `% Processor Time` if `% Processor Utility` is unavailable. Sampled once per
+second; a PDH counter's first sample is always 0, so we warm it up at startup.
 
-### Атрибуция процесса к ядру
+### Attributing a process to a core
 
-Windows не даёт per-process-per-core статистику без ETW (а ETW CPU sampling требует админа).
-Используем эвристику, достаточную для целевого сценария:
+Windows does not provide per-process, per-core statistics without ETW (and ETW CPU sampling requires
+admin rights). We use a heuristic that's good enough for the target scenario:
 
-1. Раз в секунду снимаем `Process.TotalProcessorTime` всех процессов, считаем дельту за окно —
-   получаем нагрузку каждого процесса в «ядрах» (1.0 = одно полностью занятое ядро).
-2. При алерте по N нагруженным ядрам показываем top-процессы, чья нагрузка ≈ N ядер
-   (в первую очередь тех, у кого она кратна целому числу ядер — типично для busy-loop).
-3. Для зависшего однопоточного процесса (главный сценарий) эвристика практически точна:
-   один процесс ест ровно ~1 ядро.
+1. Once per second we sample each process's `TotalProcessorTime` and compute the delta over the window —
+   each process's load expressed in **cores** (1.0 = one fully-busy core).
+2. When N cores alert, we surface the top processes whose consumption ≈ N cores (favoring those close
+   to an integer number of cores — typical of a busy-loop).
+3. For a hung single-threaded process (the main scenario) the heuristic is effectively exact: one
+   process eats roughly one core.
 
-Точная привязка через ETW (`Microsoft.Diagnostics.Tracing.TraceEvent`) — возможное развитие,
-за флагом в настройках и с запросом elevation.
+Precise attribution via ETW (`Microsoft.Diagnostics.Tracing.TraceEvent`) is a possible future
+enhancement, behind a settings flag and with an elevation prompt.
 
-### Детекция «длительной нагрузки»
+### Detecting "sustained load"
 
-Для каждого логического ядра — скользящее окно сэмплов:
+For each logical core, a sliding window of samples:
 
-- **срабатывание**: среднее ≥ `ThresholdPercent` (по умолчанию 90%) непрерывно в течение
-  `DurationSeconds` (по умолчанию 60 с);
-- **гистерезис снятия**: алерт снимается при падении ниже `ThresholdPercent − 10`;
-- **cooldown**: повторное уведомление по тому же ядру не чаще `CooldownMinutes` (по умолчанию 5 мин).
+- **trigger**: average ≥ `ThresholdPercent` (default 90%) continuously for `DurationSeconds` (default 60s);
+- **release hysteresis**: the alert clears when load drops below `ThresholdPercent − 10`;
+- **cooldown**: a repeat notification for the same core happens no more often than `CooldownMinutes`
+  (default 5 min).
 
-### Иконка в трее
+### Tray icon
 
-- 64×64 битмап, GDI+ с антиалиасингом (Windows масштабирует под трей); главная величина —
-  нагрузка самого горячего ядра крупным числом и цветом (зелёный/жёлтый/красный).
-- Пять переключаемых стилей (`TrayIconStyle`): `Ring`, `Segments`, `Speedometer`, `Liquid`, `Dots`.
-  Для `Segments`/`Dots` при большом числе ядер — попарная агрегация (максимум пары).
-- **«Живость»**: рендер идёт отдельным таймером ~125 мс (≈8 кадров/с) с фазой анимации от
-  `Stopwatch`, тогда как сбор данных остаётся раз в секунду. Это даёт плавную волну у `Liquid`
-  и пульсацию кольца в алерте, не нагружая сбор метрик.
-- Tooltip (≤127 символов, ограничение NotifyIcon): `Ядро 5: 98% | CPU 43% | ffmpeg.exe`.
-- После `Icon.FromHandle(bitmap.GetHicon())` обязателен `DestroyIcon` — иначе утечка
-  GDI-хендлов (проверено: при 8 кадрах/с число GDI-объектов стабильно).
+- 64×64 bitmap, GDI+ with anti-aliasing (Windows scales it down for the tray); the headline value is
+  the hottest core's load, shown as a large number and color (green/yellow/red).
+- Five switchable styles (`TrayIconStyle`): `Ring`, `Segments`, `Speedometer`, `Liquid`, `Dots`. For
+  `Segments`/`Dots` with many cores, pairwise aggregation (max of the pair).
+- **Liveliness**: rendering runs on a separate ~125 ms timer (≈8 fps) with an animation phase from a
+  `Stopwatch`, while data sampling stays at once per second. This gives the `Liquid` wave and the
+  alert ring pulse without loading the metrics collection.
+- Tooltip (≤127 chars, a NotifyIcon limit): `Core 5: 98% | CPU 43% | ffmpeg.exe`.
+- `Icon.FromHandle(bitmap.GetHicon())` must be followed by `DestroyIcon` — otherwise GDI handles leak
+  (verified: at 8 fps the GDI object count stays flat).
 
-### Настройки
+### Localization
 
-JSON (`System.Text.Json`) в `%AppData%\CpuMonitorNotifier\settings.json`:
-порог, длительность, cooldown, вкл/выкл уведомлений, интервал опроса, автозапуск.
-Автозапуск — значение в `HKCU\...\Run` (без задач планировщика и без админа).
+A lightweight `Loc` layer: one string dictionary per language (English/Russian/German/Spanish/French/
+Portuguese/Chinese/Japanese) with English as the fallback. Keys are flat (e.g. `menu.settings`);
+placeholders are filled via `string.Format`. Language is chosen from the `Language` setting, with
+`Auto` mapping from `CultureInfo.CurrentUICulture`.
+
+### Settings
+
+JSON (`System.Text.Json`) in `%AppData%\CpuMonitorNotifier\settings.json`: threshold, duration,
+cooldown, notifications on/off, poll interval, icon style, language. Enums are stored as strings.
+Autostart is a value in `HKCU\...\Run` (no scheduled task, no admin).
