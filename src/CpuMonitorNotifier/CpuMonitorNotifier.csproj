@@ -9,7 +9,7 @@
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <AssemblyTitle>CorePulse</AssemblyTitle>
     <Product>CorePulse</Product>
-    <Description>Live per-core CPU load monitor for Windows with smart high-load alerts and culprit detection.</Description>
+    <Description>Find the process quietly keeping your CPU cores under sustained load — the background usage that heats your machine and spins up your fans.</Description>
     <Version>1.0.0</Version>
   </PropertyGroup>
 

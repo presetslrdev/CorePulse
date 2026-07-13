@@ -17,6 +17,8 @@ Monitoring/
   CpuSampler.cs           per-core load via PerformanceCounter
   ProcessSampler.cs       process CPU-time deltas → top candidates
   LoadDetector.cs         sliding window, hysteresis, cooldown → Alert event
+  UsageHistory.cs         session core-time per process (top offenders) + persisted alert log
+App/HistoryForm.cs        history window (Top offenders + Alerts tabs)
 Tray/
   TrayIconStyle.cs        the five icon styles
   TrayIconRenderer.cs     GDI+ rendering of the live per-core icon + tooltip

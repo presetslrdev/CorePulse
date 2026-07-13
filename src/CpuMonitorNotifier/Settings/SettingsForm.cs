@@ -65,7 +65,7 @@ internal sealed class SettingsForm : Form
         _iconStyle.SelectedItem = Array.Find(StyleItems, s => s.Style == settings.IconStyle) ?? StyleItems[0];
 
         _threshold = AddNumericRow(layout, Loc.T("settings.threshold"),
-            (decimal)settings.ThresholdPercent, min: 50, max: 100);
+            (decimal)settings.ThresholdPercent, min: 10, max: 100);
         _duration = AddNumericRow(layout, Loc.T("settings.duration"),
             settings.DurationSeconds, min: 5, max: 3600);
         _cooldown = AddNumericRow(layout, Loc.T("settings.cooldown"),

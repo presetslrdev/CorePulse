@@ -20,14 +20,17 @@ internal sealed class TrayAppContext : ApplicationContext
     private readonly LoadDetector _detector;
     private readonly TrayIconRenderer _renderer = new();
     private readonly ToastNotifier _notifier = new();
+    private readonly UsageHistory _history = new();
     private readonly System.Windows.Forms.Timer _sampleTimer;
     private readonly System.Windows.Forms.Timer _renderTimer;
     private readonly Stopwatch _clock = Stopwatch.StartNew();
     private readonly ToolStripMenuItem _settingsItem;
     private readonly ToolStripMenuItem _testItem;
+    private readonly ToolStripMenuItem _historyItem;
     private readonly ToolStripMenuItem _pauseItem;
     private readonly ToolStripMenuItem _exitItem;
     private SettingsForm? _settingsForm;
+    private HistoryForm? _historyForm;
 
     public TrayAppContext()
     {
@@ -39,11 +42,13 @@ internal sealed class TrayAppContext : ApplicationContext
 
         var menu = new ContextMenuStrip();
         _settingsItem = new ToolStripMenuItem(string.Empty, null, (_, _) => ShowSettings());
+        _historyItem = new ToolStripMenuItem(string.Empty, null, (_, _) => ShowHistory());
         _testItem = new ToolStripMenuItem(string.Empty, null, (_, _) => SendTestNotification());
         _pauseItem = new ToolStripMenuItem { CheckOnClick = true };
         _pauseItem.CheckedChanged += (_, _) => TogglePause();
         _exitItem = new ToolStripMenuItem(string.Empty, null, (_, _) => ExitApp());
         menu.Items.Add(_settingsItem);
+        menu.Items.Add(_historyItem);
         menu.Items.Add(_testItem);
         menu.Items.Add(_pauseItem);
         menu.Items.Add(new ToolStripSeparator());
@@ -82,6 +87,7 @@ internal sealed class TrayAppContext : ApplicationContext
     private void LocalizeMenu()
     {
         _settingsItem.Text = Loc.T("menu.settings");
+        _historyItem.Text = Loc.T("menu.history");
         _testItem.Text = Loc.T("menu.test");
         _pauseItem.Text = Loc.T("menu.pause");
         _exitItem.Text = Loc.T("menu.exit");
@@ -92,6 +98,7 @@ internal sealed class TrayAppContext : ApplicationContext
     {
         _sampler.Sample();
         _processSampler.Sample();
+        _history.Accumulate(_processSampler.LastLoads, _settings.PollIntervalSeconds, DateTime.Now);
         _detector.Update(_sampler.CoreLoads, _settings.PollIntervalSeconds, DateTime.Now);
         SetTooltip(BuildTooltip());
     }
@@ -123,8 +130,16 @@ internal sealed class TrayAppContext : ApplicationContext
 
     private void OnAlert(LoadAlert alert)
     {
+        var culprits = _processSampler.GetTopConsumers(3);
+
+        var top = culprits.Count > 0 ? culprits[0] : null;
+        _history.AddAlert(new AlertRecord(
+            DateTime.Now, alert.Cores,
+            top?.Name ?? "—", top?.Cores ?? 0,
+            alert.Duration.TotalSeconds));
+
         if (_settings.NotificationsEnabled)
-            _notifier.ShowAlert(alert, _processSampler.GetTopConsumers(3));
+            _notifier.ShowAlert(alert, culprits);
     }
 
     /// <summary>Показывает уведомление по текущему самому нагруженному ядру — для проверки, что тосты доходят.</summary>
@@ -159,6 +174,19 @@ internal sealed class TrayAppContext : ApplicationContext
         }
         _settingsForm.Dispose();
         _settingsForm = null;
+    }
+
+    private void ShowHistory()
+    {
+        if (_historyForm is { IsDisposed: false })
+        {
+            _historyForm.Activate();
+            return;
+        }
+
+        _historyForm = new HistoryForm(_history);
+        _historyForm.FormClosed += (_, _) => _historyForm = null;
+        _historyForm.Show();
     }
 
     private void TogglePause()

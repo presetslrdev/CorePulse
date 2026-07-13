@@ -4,7 +4,7 @@
 
 # CorePulse
 
-### Live per-core CPU monitor for Windows that catches the one core stuck at 100% — and names the process behind it.
+### Find the process that's quietly cooking your CPU. CorePulse watches per-core load over time and names the app behind the sustained usage that heats your machine and spins up your fans.
 
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6?logo=windows&logoColor=white)](https://www.microsoft.com/windows)
 [![.NET](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
@@ -19,15 +19,19 @@
 ## Why CorePulse?
 
 Every CPU monitor shows you the **overall** load. But overall load hides the problem that actually
-slows your machine down: **a single core pinned at 100%.**
+heats your machine: **a single process quietly holding a core busy for a long time.**
 
-A hung single-threaded process, a runaway background service, or a stray busy-loop will saturate one
-core and stutter your system — yet on a 16-core CPU that's only ~6% overall load. Task Manager stays
-calm. Nothing alerts you. You only notice when your fans spin up an hour later.
+Here's the real story that inspired CorePulse: an open editor was using just **20–30% of one core** —
+nothing alarming on any usual monitor — yet it kept the CPU warm enough that the liquid-cooling fans
+spun up and stayed loud. The overall load looked fine. Task Manager, sorted by momentary CPU, never
+pointed at it. The culprit was hiding in plain sight because it was *steady*, not *spiky*.
 
-**CorePulse watches every core individually.** When any core stays under heavy load for too long, it
-raises a notification and **tells you which process is responsible** — so you can act in seconds, not
-after digging through Resource Monitor.
+**CorePulse looks at load over time, per core, and attributes it to a process.** It surfaces the
+quiet, sustained CPU consumers — the ones that don't spike but never let go — and names them. So when
+your fans won't calm down, you open CorePulse and immediately see *what* is keeping your cores warm.
+
+It also raises a notification when a core stays under heavy load for too long, again naming the
+responsible process — so acute spikes get your attention too.
 
 ## Tray icon styles
 
@@ -49,14 +53,28 @@ as a large number and a color that shifts green → yellow → red. Pick the loo
 ## Features
 
 - 🎯 **Per-core monitoring** — tracks every logical core, not just the overall average.
-- 🔔 **Smart, sustained-load alerts** — fires only when a core stays above your threshold for a set
-  duration (default 90% for 60s), with hysteresis and a per-core cooldown to avoid spam.
+- 📜 **Usage history** — a **Top offenders (this session)** ranking by accumulated *core-time* surfaces
+  the quiet, steady consumers (the editor at 25% that never lets go), plus a saved log of past alerts.
+- 🔔 **Sustained-load alerts** — fires only when a core stays above your threshold for a set duration,
+  with hysteresis and a per-core cooldown to avoid spam. Threshold goes as low as 10% to catch
+  moderate-but-constant load.
 - 🕵️ **Culprit detection** — every alert names the top processes likely responsible, with their CPU share.
 - 📊 **Informative live tray icon** — five modern styles, hottest-core load front and center.
 - 🌍 **8 languages** — auto-detected from your system, switchable in settings.
 - 🚀 **Lightweight & no admin rights** — a single tray app, no drivers, no elevation.
 - ⚙️ **Configurable** — threshold, duration, cooldown, poll interval, notifications on/off, autostart.
 - 🖱️ **One-click Task Manager** — jump straight to the culprit from the notification.
+
+## Usage history — find the quiet offender
+
+Right-click the tray icon → **History**. The **Top offenders** tab ranks every process by the CPU
+**core-time** it has accumulated this session — so a process steadily using a fraction of a core
+climbs the list over time and gives itself away, even though it never spikes. The **Alerts** tab keeps
+a saved log of past sustained-load events and their culprits.
+
+<div align="center">
+<img src="assets/history.png" width="560" alt="History window: Top offenders ranked by core-minutes, with a steady 27%-peak process visible" />
+</div>
 
 ## Installation
 
@@ -83,6 +101,7 @@ dotnet publish src/CpuMonitorNotifier -c Release -r win-x64 --self-contained fal
 - Hover for a tooltip: hottest core, overall CPU, and the greediest process.
 - **Right-click** the icon (or double-click) for **Settings** — choose the icon style, language,
   alert threshold/duration/cooldown, poll interval, notifications, and autostart.
+- **History** in the menu opens the offenders ranking and alert log (see above).
 - **Test notification** in the menu fires a sample toast right away — handy to confirm notifications
   aren't being swallowed by Windows **Focus Assist / Do Not Disturb**.
 

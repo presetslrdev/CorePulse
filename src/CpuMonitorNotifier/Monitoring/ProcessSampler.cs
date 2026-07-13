@@ -60,4 +60,7 @@ internal sealed class ProcessSampler
     /// <summary>Top-N процессов по потреблению CPU за последний интервал.</summary>
     public IReadOnlyList<ProcessLoad> GetTopConsumers(int count = 3) =>
         _lastLoads.Take(count).ToList();
+
+    /// <summary>Все процессы с заметной нагрузкой за последний интервал (для накопления истории).</summary>
+    public IReadOnlyList<ProcessLoad> LastLoads => _lastLoads;
 }
