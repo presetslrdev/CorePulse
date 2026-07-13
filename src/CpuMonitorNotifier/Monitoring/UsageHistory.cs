@@ -25,11 +25,25 @@ internal sealed class UsageHistory
 
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
+    private const int SeriesCap = 600; // ~10 минут при опросе раз в секунду
+
     // имя процесса -> накопленные core-секунды, пик (в ядрах), время последнего появления
     private readonly Dictionary<string, (double CoreSeconds, double Peak, DateTime Last)> _offenders = new();
     private readonly List<AlertRecord> _alerts;
+    private readonly Queue<float> _series = new(); // нагрузка самого горячего ядра по времени (для графика)
 
     public UsageHistory() => _alerts = LoadAlerts();
+
+    /// <summary>Добавляет сэмпл нагрузки самого горячего ядра в кольцевой буфер для графика.</summary>
+    public void AddSample(float hottestLoad)
+    {
+        _series.Enqueue(hottestLoad);
+        while (_series.Count > SeriesCap)
+            _series.Dequeue();
+    }
+
+    /// <summary>Снимок таймлайна нагрузки самого горячего ядра (хронологически).</summary>
+    public float[] Series() => _series.ToArray();
 
     /// <summary>Накапливает core-время процессов за прошедший интервал.</summary>
     public void Accumulate(IReadOnlyList<ProcessLoad> loads, int intervalSeconds, DateTime now)

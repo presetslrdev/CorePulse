@@ -35,11 +35,22 @@ responsible process — so acute spikes get your attention too.
 
 ## Tray icon styles
 
-The tray icon is **live** (redrawn ~8×/second) and always leads with the load of your **hottest core** —
-as a large number and a color that shifts green → yellow → red. Pick the look you like:
+The tray icon is **live** (redrawn ~8×/second) and always leads with the load of your **hottest core**
+as a large number. Pick the look you like:
 
 <div align="center">
 <img src="assets/tray-styles.png" width="760" alt="Five tray icon styles: ring, segmented ring, speedometer, liquid, dots grid" />
+</div>
+
+### The color means *duration*, not just level
+
+The number is the current load, but the **color reflects how long a core has stayed hot** — so a brief
+spike doesn't cry wolf. A momentary jump to 100% stays green; a core that *keeps* holding warms from
+green → yellow → red and finally pulses when it crosses your alert duration. That's the whole point:
+CorePulse reacts to *sustained* load, not noise.
+
+<div align="center">
+<img src="assets/tray-sustained.png" width="620" alt="A 100% spike stays green; 95% sustained warms to yellow then red with a pulse" />
 </div>
 
 | Style | What it shows |
@@ -59,7 +70,8 @@ as a large number and a color that shifts green → yellow → red. Pick the loo
   with hysteresis and a per-core cooldown to avoid spam. Threshold goes as low as 10% to catch
   moderate-but-constant load.
 - 🕵️ **Culprit detection** — every alert names the top processes likely responsible, with their CPU share.
-- 📊 **Informative live tray icon** — five modern styles, hottest-core load front and center.
+- 📊 **Informative live tray icon** — five modern styles, hottest-core load front and center, with
+  **color driven by duration** so brief spikes stay calm and only sustained load warms to red.
 - 🌍 **8 languages** — auto-detected from your system, switchable in settings.
 - 🚀 **Lightweight & no admin rights** — a single tray app, no drivers, no elevation.
 - ⚙️ **Configurable** — threshold, duration, cooldown, poll interval, notifications on/off, autostart.
@@ -69,8 +81,10 @@ as a large number and a color that shifts green → yellow → red. Pick the loo
 
 Right-click the tray icon → **History**. The **Top offenders** tab ranks every process by the CPU
 **core-time** it has accumulated this session — so a process steadily using a fraction of a core
-climbs the list over time and gives itself away, even though it never spikes. The **Alerts** tab keeps
-a saved log of past sustained-load events and their culprits.
+climbs the list over time and gives itself away, even though it never spikes. Above it, a **timeline
+of the hottest core** makes the difference obvious: a sustained offender shows a flat *shelf*, a real
+spike is just a thin blip. The **Alerts** tab keeps a saved log of past sustained-load events and
+their culprits.
 
 <div align="center">
 <img src="assets/history.png" width="560" alt="History window: Top offenders ranked by core-minutes, with a steady 27%-peak process visible" />

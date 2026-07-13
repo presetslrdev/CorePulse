@@ -29,6 +29,7 @@ internal sealed class TrayAppContext : ApplicationContext
     private readonly ToolStripMenuItem _historyItem;
     private readonly ToolStripMenuItem _pauseItem;
     private readonly ToolStripMenuItem _exitItem;
+    private readonly Icon _appIcon;
     private SettingsForm? _settingsForm;
     private HistoryForm? _historyForm;
 
@@ -39,6 +40,9 @@ internal sealed class TrayAppContext : ApplicationContext
         _detector = new LoadDetector(_sampler.CoreCount);
         _detector.Alert += OnAlert;
         ApplySettings();
+
+        try { _appIcon = Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? SystemIcons.Application; }
+        catch { _appIcon = SystemIcons.Application; }
 
         var menu = new ContextMenuStrip();
         _settingsItem = new ToolStripMenuItem(string.Empty, null, (_, _) => ShowSettings());
@@ -56,7 +60,7 @@ internal sealed class TrayAppContext : ApplicationContext
 
         _trayIcon = new NotifyIcon
         {
-            Icon = SystemIcons.Application,
+            Icon = _appIcon,
             Text = Loc.AppName,
             ContextMenuStrip = menu,
             Visible = true,
@@ -100,13 +104,20 @@ internal sealed class TrayAppContext : ApplicationContext
         _processSampler.Sample();
         _history.Accumulate(_processSampler.LastLoads, _settings.PollIntervalSeconds, DateTime.Now);
         _detector.Update(_sampler.CoreLoads, _settings.PollIntervalSeconds, DateTime.Now);
+
+        float hottest = 0f;
+        for (int i = 0; i < _sampler.CoreCount; i++)
+            if (_sampler.CoreLoads[i] > hottest) hottest = _sampler.CoreLoads[i];
+        _history.AddSample(hottest);
+
         SetTooltip(BuildTooltip());
     }
 
     /// <summary>Частый тик: перерисовка иконки с текущей фазой анимации.</summary>
     private void Render()
     {
-        _renderer.Apply(_trayIcon, _sampler.CoreLoads, _detector.ActiveAlerts, _clock.Elapsed.TotalSeconds);
+        _renderer.Apply(_trayIcon, _sampler.CoreLoads, _detector.ActiveAlerts,
+            _detector.Heat, _clock.Elapsed.TotalSeconds);
     }
 
     private string BuildTooltip()
@@ -184,7 +195,7 @@ internal sealed class TrayAppContext : ApplicationContext
             return;
         }
 
-        _historyForm = new HistoryForm(_history);
+        _historyForm = new HistoryForm(_history, _settings.ThresholdPercent);
         _historyForm.FormClosed += (_, _) => _historyForm = null;
         _historyForm.Show();
     }
@@ -195,7 +206,7 @@ internal sealed class TrayAppContext : ApplicationContext
         {
             _sampleTimer.Stop();
             _renderTimer.Stop();
-            _trayIcon.Icon = SystemIcons.Application;
+            _trayIcon.Icon = _appIcon;
             SetTooltip(string.Format(Loc.T("app.paused"), Loc.AppName));
         }
         else

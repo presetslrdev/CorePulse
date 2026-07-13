@@ -17,8 +17,9 @@ Monitoring/
   CpuSampler.cs           per-core load via PerformanceCounter
   ProcessSampler.cs       process CPU-time deltas → top candidates
   LoadDetector.cs         sliding window, hysteresis, cooldown → Alert event
-  UsageHistory.cs         session core-time per process (top offenders) + persisted alert log
-App/HistoryForm.cs        history window (Top offenders + Alerts tabs)
+  UsageHistory.cs         session core-time per process (top offenders) + alert log + hottest-core timeline
+App/HistoryForm.cs        history window (Top offenders + timeline sparkline + Alerts tabs)
+App/SparklineControl.cs   hottest-core load timeline (shelf vs spike)
 Tray/
   TrayIconStyle.cs        the five icon styles
   TrayIconRenderer.cs     GDI+ rendering of the live per-core icon + tooltip
@@ -69,6 +70,11 @@ For each logical core, a sliding window of samples:
   the hottest core's load, shown as a large number and color (green/yellow/red).
 - Five switchable styles (`TrayIconStyle`): `Ring`, `Segments`, `Speedometer`, `Liquid`, `Dots`. For
   `Segments`/`Dots` with many cores, pairwise aggregation (max of the pair).
+- **Color = duration, not level**: the number/arc/level still show the current load of the focused
+  core, but the fill **color** is driven by each core's *heat* (`LoadDetector.Heat`, 0..1 = how long
+  it has held above threshold relative to the alert duration). A brief spike stays green; a core that
+  keeps holding warms green→yellow→red and pulses at alert. This is what makes the icon react to
+  sustained load rather than momentary noise.
 - **Liveliness**: rendering runs on a separate ~125 ms timer (≈8 fps) with an animation phase from a
   `Stopwatch`, while data sampling stays at once per second. This gives the `Liquid` wave and the
   alert ring pulse without loading the metrics collection.

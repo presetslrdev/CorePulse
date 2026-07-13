@@ -11,20 +11,24 @@ namespace CpuMonitorNotifier.App;
 internal sealed class HistoryForm : Form
 {
     private readonly UsageHistory _history;
+    private readonly double _thresholdPercent;
+    private readonly SparklineControl _spark;
     private readonly ListView _offenders;
     private readonly ListView _alerts;
     private readonly System.Windows.Forms.Timer _refresh;
 
-    public HistoryForm(UsageHistory history)
+    public HistoryForm(UsageHistory history, double thresholdPercent)
     {
         _history = history;
+        _thresholdPercent = thresholdPercent;
         Text = string.Format(Loc.T("history.title"), Loc.AppName);
         FormBorderStyle = FormBorderStyle.Sizable;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
         AutoScaleMode = AutoScaleMode.Font;
-        ClientSize = new Size(560, 380);
-        MinimumSize = new Size(460, 300);
+        ClientSize = new Size(560, 420);
+        MinimumSize = new Size(460, 340);
+        TryApplyAppIcon();
 
         var tabs = new TabControl { Dock = DockStyle.Fill };
 
@@ -33,8 +37,22 @@ internal sealed class HistoryForm : Form
             (Loc.T("history.col.coremin"), 110),
             (Loc.T("history.col.peak"), 90),
             (Loc.T("history.col.lastseen"), 110));
+
+        // вкладка нагрузчиков: сверху график самого горячего ядра, снизу таблица
+        var offendersLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
+        offendersLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 112));
+        offendersLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+        var chartPanel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(6, 4, 6, 6) };
+        var chartLabel = new Label { Text = Loc.T("history.chart"), Dock = DockStyle.Top, AutoSize = true };
+        _spark = new SparklineControl { Dock = DockStyle.Fill };
+        chartPanel.Controls.Add(_spark);
+        chartPanel.Controls.Add(chartLabel);
+        offendersLayout.Controls.Add(chartPanel, 0, 0);
+        offendersLayout.Controls.Add(_offenders, 0, 1);
+
         var offendersTab = new TabPage(Loc.T("history.tab.offenders"));
-        offendersTab.Controls.Add(_offenders);
+        offendersTab.Controls.Add(offendersLayout);
 
         _alerts = MakeListView(
             (Loc.T("history.col.time"), 130),
@@ -71,9 +89,17 @@ internal sealed class HistoryForm : Form
         return lv;
     }
 
+    private void TryApplyAppIcon()
+    {
+        try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); }
+        catch { /* иконка приложения недоступна — оставляем стандартную */ }
+    }
+
     private void Populate()
     {
         var c = CultureInfo.CurrentCulture;
+
+        _spark.SetData(_history.Series(), _thresholdPercent);
 
         _offenders.BeginUpdate();
         _offenders.Items.Clear();
