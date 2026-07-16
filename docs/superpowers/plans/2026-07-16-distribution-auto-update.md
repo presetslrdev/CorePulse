@@ -885,14 +885,18 @@ internal sealed class UpdateService
             return File.OpenRead(uri.LocalPath);
 
         var http = GitHubReleases.CreateClient();
+        HttpResponseMessage? response = null;
         try
         {
-            var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
+            response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
             response.EnsureSuccessStatusCode();
             return new HttpOwnedStream(await response.Content.ReadAsStreamAsync(ct), http, response);
         }
         catch
         {
+            // EnsureSuccessStatusCode бросает уже после того, как ответ получен: освободить надо оба,
+            // Dispose у HttpClient не закрывает выданные им ответы
+            response?.Dispose();
             http.Dispose();
             throw;
         }
@@ -910,7 +914,8 @@ internal sealed class UpdateService
         public override bool CanRead => inner.CanRead;
         public override bool CanSeek => false;
         public override bool CanWrite => false;
-        public override long Length => inner.Length;
+        // поток ответа последовательный: длина неизвестна при chunked-передаче, врать про неё нельзя
+        public override long Length => throw new NotSupportedException();
         public override long Position { get => inner.Position; set => throw new NotSupportedException(); }
         public override void Flush() => inner.Flush();
         public override int Read(byte[] buffer, int offset, int count) => inner.Read(buffer, offset, count);
