@@ -527,6 +527,20 @@ public class GitHubReleasesTests
     [Fact]
     public void ParseSha256Sums_IgnoresLinesThatAreNotHashes()
         => Assert.Null(GitHubReleases.ParseSha256Sums("deadbeef  CorePulse.exe\n", "CorePulse.exe"));
+
+    [Fact]
+    public void ParseSha256Sums_IgnoresRightLengthButNonHexToken()
+        => Assert.Null(GitHubReleases.ParseSha256Sums(new string('z', 64) + "  CorePulse.exe\n", "CorePulse.exe"));
+
+    [Fact]
+    public async Task FetchLatestAsync_LetsRealCancellationThrough()
+    {
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+        // отмена — команда вызывающего, а не сбой проверки: она обязана дойти наружу
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => GitHubReleases.FetchLatestAsync("CorePulse.exe", cts.Token));
+    }
 }
 ```
 
@@ -602,8 +616,14 @@ internal static class GitHubReleases
             string? hash = ParseSha256Sums(await http.GetStringAsync(parsed.SumsUrl, ct), assetName);
             return hash is null ? null : new ReleaseInfo(parsed.Version, parsed.AssetUrl, hash, parsed.PageUrl);
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw; // нас отменили — это не сбой проверки, глушить нельзя
+        }
         catch (Exception)
         {
+            // офлайн, лимит запросов, битый релиз, таймаут HttpClient (тоже TaskCanceledException,
+            // но без запроса отмены) — всё это сбои: проверка молча не состоялась
             return null;
         }
     }
@@ -659,13 +679,22 @@ internal static class GitHubReleases
         foreach (string line in text.Split('\n'))
         {
             string[] parts = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length < 2 || parts[0].Length != Sha256HexLength) continue;
+            if (parts.Length < 2 || !IsSha256Hex(parts[0])) continue;
 
             string name = parts[^1].TrimStart('*'); // coreutils помечает двоичный режим звёздочкой
             if (string.Equals(name, fileName, StringComparison.OrdinalIgnoreCase))
                 return parts[0].ToLowerInvariant();
         }
         return null;
+    }
+
+    /// <summary>Ровно 64 шестнадцатеричных символа — иначе это не строка хеша, а что-то ещё.</summary>
+    private static bool IsSha256Hex(string s)
+    {
+        if (s.Length != Sha256HexLength) return false;
+        foreach (char c in s)
+            if (!Uri.IsHexDigit(c)) return false;
+        return true;
     }
 
     private static string? GetString(JsonElement e, string property) =>
@@ -676,7 +705,15 @@ internal static class GitHubReleases
 - [ ] **Step 6: Run tests to verify they pass**
 
 Run: `dotnet test tests/CorePulse.Tests --filter "GitHubReleasesTests|FileHashTests"`
-Expected: PASS — 14 tests passed
+Expected: PASS — 16 tests passed
+
+> **Why `FetchLatestAsync` does not swallow cancellation.** The null-on-failure contract covers
+> *failures* — offline, rate limit, a malformed release. Caller-initiated cancellation is not a
+> failure, and reporting it as "no update available" would hide that the check never ran. The subtlety
+> is that `HttpClient`'s own **timeout** also surfaces as `TaskCanceledException`, and that one *is* a
+> failure — so the filter is `when (ct.IsCancellationRequested)`, which is true only for real
+> cancellation. `FetchLatestAsync_LetsRealCancellationThrough` pins this; it makes no network call
+> because a pre-cancelled token throws before the request is sent.
 
 - [ ] **Step 7: Commit**
 
