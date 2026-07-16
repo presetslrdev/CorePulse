@@ -24,8 +24,14 @@ internal static class GitHubReleases
             string? hash = ParseSha256Sums(await http.GetStringAsync(parsed.SumsUrl, ct), assetName);
             return hash is null ? null : new ReleaseInfo(parsed.Version, parsed.AssetUrl, hash, parsed.PageUrl);
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw; // нас отменили — это не сбой проверки, глушить нельзя
+        }
         catch (Exception)
         {
+            // офлайн, лимит запросов, битый релиз, таймаут HttpClient (тоже TaskCanceledException,
+            // но без запроса отмены) — всё это сбои: проверка молча не состоялась
             return null;
         }
     }
@@ -81,13 +87,22 @@ internal static class GitHubReleases
         foreach (string line in text.Split('\n'))
         {
             string[] parts = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length < 2 || parts[0].Length != Sha256HexLength) continue;
+            if (parts.Length < 2 || !IsSha256Hex(parts[0])) continue;
 
             string name = parts[^1].TrimStart('*'); // coreutils помечает двоичный режим звёздочкой
             if (string.Equals(name, fileName, StringComparison.OrdinalIgnoreCase))
                 return parts[0].ToLowerInvariant();
         }
         return null;
+    }
+
+    /// <summary>Ровно 64 шестнадцатеричных символа — иначе это не строка хеша, а что-то ещё.</summary>
+    private static bool IsSha256Hex(string s)
+    {
+        if (s.Length != Sha256HexLength) return false;
+        foreach (char c in s)
+            if (!Uri.IsHexDigit(c)) return false;
+        return true;
     }
 
     private static string? GetString(JsonElement e, string property) =>

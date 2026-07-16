@@ -94,4 +94,18 @@ public class GitHubReleasesTests
     [Fact]
     public void ParseSha256Sums_IgnoresLinesThatAreNotHashes()
         => Assert.Null(GitHubReleases.ParseSha256Sums("deadbeef  CorePulse.exe\n", "CorePulse.exe"));
+
+    [Fact]
+    public void ParseSha256Sums_IgnoresRightLengthButNonHexToken()
+        => Assert.Null(GitHubReleases.ParseSha256Sums(new string('z', 64) + "  CorePulse.exe\n", "CorePulse.exe"));
+
+    [Fact]
+    public async Task FetchLatestAsync_LetsRealCancellationThrough()
+    {
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+        // отмена — команда вызывающего, а не сбой проверки: она обязана дойти наружу
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => GitHubReleases.FetchLatestAsync("CorePulse.exe", cts.Token));
+    }
 }
