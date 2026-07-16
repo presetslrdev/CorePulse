@@ -1,4 +1,5 @@
 using System.Drawing.Drawing2D;
+using CpuMonitorNotifier.Theming;
 
 namespace CpuMonitorNotifier.App;
 
@@ -33,12 +34,13 @@ internal sealed class SparklineControl : Control
         float w = Width, h = Height;
         float pad = 4f;
         float plotH = h - pad * 2;
+        bool dark = ThemeManager.IsDarkNow;
 
-        using (var bg = new SolidBrush(Color.FromArgb(255, 24, 24, 30)))
+        using (var bg = new SolidBrush(dark ? Color.FromArgb(255, 24, 24, 30) : Color.FromArgb(255, 250, 250, 252)))
             g.FillRectangle(bg, 0, 0, w, h);
 
         // сетка 25/50/75%
-        using (var grid = new Pen(Color.FromArgb(30, 255, 255, 255)))
+        using (var grid = new Pen(dark ? Color.FromArgb(30, 255, 255, 255) : Color.FromArgb(28, 0, 0, 0)))
             for (int p = 25; p <= 75; p += 25)
             {
                 float y = pad + plotH * (1f - p / 100f);

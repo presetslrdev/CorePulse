@@ -4,6 +4,7 @@ using CpuMonitorNotifier.Localization;
 using CpuMonitorNotifier.Monitoring;
 using CpuMonitorNotifier.Notifications;
 using CpuMonitorNotifier.Settings;
+using CpuMonitorNotifier.Theming;
 using CpuMonitorNotifier.Tray;
 
 namespace CpuMonitorNotifier.App;
@@ -84,6 +85,7 @@ internal sealed class TrayAppContext : ApplicationContext
     private void ApplySettings()
     {
         Loc.Apply(_settings.Language);
+        ThemeManager.Apply(_settings.Theme); // подхватится окнами, создаваемыми после смены
         _detector.ThresholdPercent = _settings.ThresholdPercent;
         _detector.DurationSeconds = _settings.DurationSeconds;
         _detector.Cooldown = TimeSpan.FromMinutes(_settings.CooldownMinutes);

@@ -26,6 +26,7 @@ Tray/
   TrayIconRenderer.cs     GDI+ rendering of the live per-core icon + tooltip
 Notifications/ToastNotifier.cs
 Localization/Localization.cs   8-language string tables, English fallback
+Theming/ThemeManager.cs        System/Light/Dark theme via Application.SetColorMode
 Settings/
   AppSettings.cs          JSON in %AppData%\CpuMonitorNotifier\settings.json
   AutoStart.cs            HKCU\Software\Microsoft\Windows\CurrentVersion\Run
@@ -87,6 +88,20 @@ Both feed the same history log; process alerts are recorded with an empty core l
 - Tooltip (≤127 chars, a NotifyIcon limit): `Core 5: 98% | CPU 43% | ffmpeg.exe`.
 - `Icon.FromHandle(bitmap.GetHicon())` must be followed by `DestroyIcon` — otherwise GDI handles leak
   (verified: at 8 fps the GDI object count stays flat).
+
+### Theming
+
+`AppTheme` is `System` (default), `Light` or `Dark`. `ThemeManager.Apply` maps it onto WinForms'
+`Application.SetColorMode` (`System` / `Classic` / `Dark`), which themes the windows and their title
+bars. `System` resolves from `HKCU\...\Themes\Personalize\AppsUseLightTheme` (0 = dark) — used by
+`SparklineControl`, which paints its own canvas and so picks its background/grid from
+`ThemeManager.IsDarkNow`. The color mode is applied at startup before any window is created and
+re-applied when settings change; since Settings/History are created on demand, a theme change takes
+effect the next time a window is opened.
+
+The tray icon is intentionally *not* themed by this setting: it lives on the taskbar (whose color
+follows the Windows theme, not the app's), and its dark rounded backer is verified legible on both
+light and dark taskbars.
 
 ### Localization
 

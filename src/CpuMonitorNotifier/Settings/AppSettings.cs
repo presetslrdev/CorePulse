@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using CpuMonitorNotifier.Localization;
+using CpuMonitorNotifier.Theming;
 using CpuMonitorNotifier.Tray;
 
 namespace CpuMonitorNotifier.Settings;
@@ -15,6 +16,7 @@ internal sealed class AppSettings
     public int PollIntervalSeconds { get; set; } = 1;
     public TrayIconStyle IconStyle { get; set; } = TrayIconStyle.Liquid;
     public AppLanguage Language { get; set; } = AppLanguage.Auto;
+    public AppTheme Theme { get; set; } = AppTheme.System;
 
     // Алерты по «тихому» процессу: держит ≥ ProcessThresholdPercent% одного ядра дольше ProcessDurationMinutes.
     public bool ProcessAlertsEnabled { get; set; } = true;

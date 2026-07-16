@@ -1,5 +1,6 @@
 using CpuMonitorNotifier.Localization;
 using CpuMonitorNotifier.Settings;
+using CpuMonitorNotifier.Theming;
 
 namespace CpuMonitorNotifier;
 
@@ -12,9 +13,11 @@ internal static class Program
         if (!createdNew)
             return; // уже запущен — вторую иконку не создаём
 
-        Loc.Apply(AppSettings.Load().Language); // локализуем в т.ч. возможное сообщение об ошибке
+        var startup = AppSettings.Load();
+        Loc.Apply(startup.Language); // локализуем в т.ч. возможное сообщение об ошибке
 
         ApplicationConfiguration.Initialize();
+        ThemeManager.Apply(startup.Theme); // до создания окон
         try
         {
             Application.Run(new App.TrayAppContext());

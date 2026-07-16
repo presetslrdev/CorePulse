@@ -76,6 +76,7 @@ CorePulse reacts to *sustained* load, not noise.
 - 📊 **Informative live tray icon** — five modern styles, hottest-core load front and center, with
   **color driven by duration** so brief spikes stay calm and only sustained load warms to red.
 - 🌍 **8 languages** — auto-detected from your system, switchable in settings.
+- 🌗 **Light / dark themes** — follows your Windows theme by default, or pin it to Light or Dark.
 - 🚀 **Lightweight & no admin rights** — a single tray app, no drivers, no elevation.
 - ⚙️ **Configurable** — threshold, duration, cooldown, poll interval, notifications on/off, autostart.
 - 🖱️ **One-click Task Manager** — jump straight to the culprit from the notification.
@@ -116,8 +117,8 @@ dotnet publish src/CpuMonitorNotifier -c Release -r win-x64 --self-contained fal
 
 - Look at the tray icon: the number is your hottest core's load; the color tells you how hot.
 - Hover for a tooltip: hottest core, overall CPU, and the greediest process.
-- **Right-click** the icon (or double-click) for **Settings** — choose the icon style, language,
-  alert threshold/duration/cooldown, poll interval, notifications, and autostart.
+- **Right-click** the icon (or double-click) for **Settings** — choose the icon style, language, theme,
+  alert threshold/duration/cooldown, poll interval, notifications, exclusions, and autostart.
 - **History** in the menu opens the offenders ranking and alert log (see above).
 - **Test notification** in the menu fires a sample toast right away — handy to confirm notifications
   aren't being swallowed by Windows **Focus Assist / Do Not Disturb**.

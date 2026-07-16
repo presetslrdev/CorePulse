@@ -1,5 +1,6 @@
 using CpuMonitorNotifier.App;
 using CpuMonitorNotifier.Localization;
+using CpuMonitorNotifier.Theming;
 using CpuMonitorNotifier.Tray;
 
 namespace CpuMonitorNotifier.Settings;
@@ -17,6 +18,18 @@ internal sealed class SettingsForm : Form
         public override string ToString() => Display;
     }
 
+    private sealed record ThemeItem(AppTheme Theme, string Key)
+    {
+        public override string ToString() => Loc.T(Key);
+    }
+
+    private static readonly ThemeItem[] ThemeItems =
+    {
+        new(AppTheme.System, "theme.system"),
+        new(AppTheme.Light, "theme.light"),
+        new(AppTheme.Dark, "theme.dark"),
+    };
+
     private static readonly StyleItem[] StyleItems =
     {
         new(TrayIconStyle.Ring, "style.ring"),
@@ -27,6 +40,7 @@ internal sealed class SettingsForm : Form
     };
 
     private readonly ComboBox _language;
+    private readonly ComboBox _theme;
     private readonly ComboBox _iconStyle;
     private readonly NumericUpDown _threshold;
     private readonly NumericUpDown _duration;
@@ -47,7 +61,7 @@ internal sealed class SettingsForm : Form
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
         AutoScaleMode = AutoScaleMode.Font;
-        ClientSize = new Size(440, 446);
+        ClientSize = new Size(440, 482);
         try { Icon = System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
         _excluded = new List<string>(settings.ExcludedProcesses);
 
@@ -55,7 +69,7 @@ internal sealed class SettingsForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 2,
-            RowCount = 13,
+            RowCount = 14,
             Padding = new Padding(12),
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 62));
@@ -66,6 +80,10 @@ internal sealed class SettingsForm : Form
         langItems.AddRange(Loc.LanguageChoices.Select(c => new LangItem(c.Lang, c.Native)));
         _language.Items.AddRange(langItems.ToArray());
         _language.SelectedItem = langItems.Find(i => i.Language == settings.Language) ?? langItems[0];
+
+        _theme = AddComboRow(layout, Loc.T("settings.theme"));
+        _theme.Items.AddRange(ThemeItems);
+        _theme.SelectedItem = Array.Find(ThemeItems, t => t.Theme == settings.Theme) ?? ThemeItems[0];
 
         _iconStyle = AddComboRow(layout, Loc.T("settings.iconStyle"));
         _iconStyle.Items.AddRange(StyleItems);
@@ -151,6 +169,7 @@ internal sealed class SettingsForm : Form
     public void ApplyTo(AppSettings settings)
     {
         settings.Language = ((LangItem)_language.SelectedItem!).Language;
+        settings.Theme = ((ThemeItem)_theme.SelectedItem!).Theme;
         settings.IconStyle = ((StyleItem)_iconStyle.SelectedItem!).Style;
         settings.ThresholdPercent = (float)_threshold.Value;
         settings.DurationSeconds = (int)_duration.Value;
