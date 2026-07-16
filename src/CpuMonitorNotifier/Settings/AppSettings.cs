@@ -13,13 +13,16 @@ internal sealed class AppSettings
     public int CooldownMinutes { get; set; } = 5;
     public bool NotificationsEnabled { get; set; } = true;
     public int PollIntervalSeconds { get; set; } = 1;
-    public TrayIconStyle IconStyle { get; set; } = TrayIconStyle.Ring;
+    public TrayIconStyle IconStyle { get; set; } = TrayIconStyle.Liquid;
     public AppLanguage Language { get; set; } = AppLanguage.Auto;
 
     // Алерты по «тихому» процессу: держит ≥ ProcessThresholdPercent% одного ядра дольше ProcessDurationMinutes.
     public bool ProcessAlertsEnabled { get; set; } = true;
     public float ProcessThresholdPercent { get; set; } = 25f;
     public int ProcessDurationMinutes { get; set; } = 10;
+
+    // Имена процессов (без .exe), которые не должны вызывать уведомления о нагрузке.
+    public List<string> ExcludedProcesses { get; set; } = new();
 
     private static readonly string FilePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),

@@ -27,16 +27,23 @@ internal sealed class ProcessLoadDetector
     public int DurationSeconds { get; set; } = 600;
     public TimeSpan Cooldown { get; set; } = TimeSpan.FromMinutes(5);
 
+    /// <summary>Имена процессов, которые не должны вызывать алерты (регистронезависимо).</summary>
+    public HashSet<string> Excluded { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>Поднимается один раз, когда процесс переходит в состояние длительной нагрузки.</summary>
     public event Action<ProcessAlert>? Alert;
 
     /// <summary>Обновляет состояние по свежему срезу нагрузки процессов. Вызывается раз в intervalSeconds.</summary>
     public void Update(IReadOnlyList<ProcessLoad> loads, int intervalSeconds, DateTime now)
     {
-        // агрегируем «ядра» по имени процесса (у одного имени может быть много PID)
+        // агрегируем «ядра» по имени процесса (у одного имени может быть много PID); исключённые пропускаем
         var byName = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
         foreach (var l in loads)
+        {
+            if (Excluded.Contains(l.Name))
+                continue;
             byName[l.Name] = byName.TryGetValue(l.Name, out var c) ? c + l.Cores : l.Cores;
+        }
 
         foreach (var name in byName.Keys)
             if (!_state.ContainsKey(name))

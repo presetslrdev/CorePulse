@@ -56,10 +56,10 @@ CorePulse reacts to *sustained* load, not noise.
 
 | Style | What it shows |
 |-------|---------------|
-| **Ring + %** | Ring gauge of the hottest core + big number. Most legible at tiny tray sizes. *(default)* |
+| **Ring + %** | Ring gauge of the hottest core + big number. Most legible at tiny tray sizes. |
 | **Segmented ring** | One segment per core (see them all at a glance), hottest highlighted, its % in the center. |
 | **Speedometer** | 270° gauge — the familiar dashboard metaphor. |
-| **Liquid + %** | A container that fills to the load level with an animated wave. |
+| **Liquid + %** | A container that fills to the load level with an animated wave. *(default)* |
 | **Dots grid** | A dot per core; each dot fills and colors by its load. |
 
 ## Features
@@ -70,6 +70,8 @@ CorePulse reacts to *sustained* load, not noise.
 - 🔔 **Sustained-load alerts, two ways** — a **per-process** alert when one app keeps holding a core
   (e.g. ≥25% for 10 min — the quiet cooker), and a **per-core** alert when any core stays hot too long.
   Both use hysteresis and a cooldown to avoid spam; the core threshold goes as low as 10%.
+- 🙈 **Exclusions** — add known-good apps (your IDE, browser, encoder) to an exclusion list so they
+  never raise a process alert.
 - 🕵️ **Culprit detection** — every alert names the top processes likely responsible, with their CPU share.
 - 📊 **Informative live tray icon** — five modern styles, hottest-core load front and center, with
   **color driven by duration** so brief spikes stay calm and only sustained load warms to red.

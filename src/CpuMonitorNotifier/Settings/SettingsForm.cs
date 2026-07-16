@@ -1,9 +1,10 @@
+using CpuMonitorNotifier.App;
 using CpuMonitorNotifier.Localization;
 using CpuMonitorNotifier.Tray;
 
 namespace CpuMonitorNotifier.Settings;
 
-/// <summary>Окно настроек: язык, стиль иконки, пороги детекции, уведомления, автозапуск.</summary>
+/// <summary>Окно настроек: язык, стиль иконки, пороги детекции, уведомления, исключения, автозапуск.</summary>
 internal sealed class SettingsForm : Form
 {
     private sealed record StyleItem(TrayIconStyle Style, string Key)
@@ -36,6 +37,7 @@ internal sealed class SettingsForm : Form
     private readonly CheckBox _notifications;
     private readonly CheckBox _procAlerts;
     private readonly CheckBox _autoStart;
+    private readonly List<string> _excluded;
 
     public SettingsForm(AppSettings settings)
     {
@@ -45,14 +47,15 @@ internal sealed class SettingsForm : Form
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
         AutoScaleMode = AutoScaleMode.Font;
-        ClientSize = new Size(440, 410);
+        ClientSize = new Size(440, 446);
         try { Icon = System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
+        _excluded = new List<string>(settings.ExcludedProcesses);
 
         var layout = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             ColumnCount = 2,
-            RowCount = 12,
+            RowCount = 13,
             Padding = new Padding(12),
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 62));
@@ -99,6 +102,24 @@ internal sealed class SettingsForm : Form
         layout.Controls.Add(_procAlerts);
         layout.SetColumnSpan(_procAlerts, 2);
 
+        var exclusionsBtn = new Button
+        {
+            Text = Loc.T("settings.exclusions"),
+            AutoSize = true,
+            Anchor = AnchorStyles.Left,
+        };
+        exclusionsBtn.Click += (_, _) =>
+        {
+            using var f = new ExclusionsForm(_excluded);
+            if (f.ShowDialog(this) == DialogResult.OK)
+            {
+                _excluded.Clear();
+                _excluded.AddRange(f.Result);
+            }
+        };
+        layout.Controls.Add(exclusionsBtn);
+        layout.SetColumnSpan(exclusionsBtn, 2);
+
         _autoStart = new CheckBox
         {
             Text = Loc.T("settings.autostart"),
@@ -139,6 +160,7 @@ internal sealed class SettingsForm : Form
         settings.ProcessDurationMinutes = (int)_procDuration.Value;
         settings.NotificationsEnabled = _notifications.Checked;
         settings.ProcessAlertsEnabled = _procAlerts.Checked;
+        settings.ExcludedProcesses = new List<string>(_excluded);
         AutoStart.IsEnabled = _autoStart.Checked;
     }
 

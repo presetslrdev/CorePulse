@@ -90,6 +90,7 @@ internal sealed class TrayAppContext : ApplicationContext
         _procDetector.ThresholdCores = _settings.ProcessThresholdPercent / 100.0;
         _procDetector.DurationSeconds = _settings.ProcessDurationMinutes * 60;
         _procDetector.Cooldown = TimeSpan.FromMinutes(_settings.CooldownMinutes);
+        _procDetector.Excluded = new HashSet<string>(_settings.ExcludedProcesses, StringComparer.OrdinalIgnoreCase);
         _renderer.Style = _settings.IconStyle;
     }
 
