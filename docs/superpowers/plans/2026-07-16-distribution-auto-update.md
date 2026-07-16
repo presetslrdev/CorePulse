@@ -234,15 +234,31 @@ namespace CorePulse.Tests;
 
 public class DistributionInfoTests
 {
-    [Theory]
-    [InlineData("self-contained", DistributionKind.SelfContained)]
-    [InlineData("framework", DistributionKind.Framework)]
-    [InlineData("source", DistributionKind.Source)]
-    [InlineData("", DistributionKind.Source)]
-    [InlineData(null, DistributionKind.Source)]
-    [InlineData("nonsense", DistributionKind.Source)]
-    public void Parse_MapsStampToKind(string? stamp, DistributionKind expected)
-        => Assert.Equal(expected, DistributionInfo.Parse(stamp));
+    // Отдельные Fact, а не Theory с параметром DistributionKind: внутренний тип в сигнатуре
+    // публичного метода даёт CS0051, а xunit требует публичный тест-класс. В теле метода — можно.
+    [Fact]
+    public void Parse_SelfContainedStamp()
+        => Assert.Equal(DistributionKind.SelfContained, DistributionInfo.Parse("self-contained"));
+
+    [Fact]
+    public void Parse_FrameworkStamp()
+        => Assert.Equal(DistributionKind.Framework, DistributionInfo.Parse("framework"));
+
+    [Fact]
+    public void Parse_SourceStamp()
+        => Assert.Equal(DistributionKind.Source, DistributionInfo.Parse("source"));
+
+    [Fact]
+    public void Parse_EmptyStampIsSource()
+        => Assert.Equal(DistributionKind.Source, DistributionInfo.Parse(""));
+
+    [Fact]
+    public void Parse_MissingStampIsSource()
+        => Assert.Equal(DistributionKind.Source, DistributionInfo.Parse(null));
+
+    [Fact]
+    public void Parse_UnknownStampIsSource()
+        => Assert.Equal(DistributionKind.Source, DistributionInfo.Parse("nonsense"));
 
     [Fact]
     public void AssetNameFor_SelfContained() =>
@@ -333,6 +349,12 @@ internal static class DistributionInfo
 
 Run: `dotnet test tests/CorePulse.Tests --filter DistributionInfoTests`
 Expected: PASS — 11 tests passed
+
+> **C# constraint, learned the hard way.** Internal types must not appear in the *signature* of a
+> public test method — `[Theory] public void T(DistributionKind k)` fails with **CS0051** even with
+> `InternalsVisibleTo`, because the attribute grants access without raising the type's accessibility,
+> and xUnit requires public test classes. Using the internal type inside a method *body* is fine.
+> This applies to every later task that tests an internal enum or record.
 
 - [ ] **Step 6: Verify the CI override works**
 
