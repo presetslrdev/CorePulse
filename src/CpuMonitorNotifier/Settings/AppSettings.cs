@@ -16,6 +16,11 @@ internal sealed class AppSettings
     public TrayIconStyle IconStyle { get; set; } = TrayIconStyle.Ring;
     public AppLanguage Language { get; set; } = AppLanguage.Auto;
 
+    // Алерты по «тихому» процессу: держит ≥ ProcessThresholdPercent% одного ядра дольше ProcessDurationMinutes.
+    public bool ProcessAlertsEnabled { get; set; } = true;
+    public float ProcessThresholdPercent { get; set; } = 25f;
+    public int ProcessDurationMinutes { get; set; } = 10;
+
     private static readonly string FilePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "CpuMonitorNotifier", "settings.json");

@@ -30,8 +30,9 @@ pointed at it. The culprit was hiding in plain sight because it was *steady*, no
 quiet, sustained CPU consumers — the ones that don't spike but never let go — and names them. So when
 your fans won't calm down, you open CorePulse and immediately see *what* is keeping your cores warm.
 
-It also raises a notification when a core stays under heavy load for too long, again naming the
-responsible process — so acute spikes get your attention too.
+And it doesn't wait for you to look: CorePulse **notifies you when a single process keeps holding a
+core** (by default ≥25% of a core for 10 minutes) — the exact pattern of the quiet cooker — as well as
+when any core stays under heavy load for too long. Every alert names the responsible process.
 
 ## Tray icon styles
 
@@ -66,9 +67,9 @@ CorePulse reacts to *sustained* load, not noise.
 - 🎯 **Per-core monitoring** — tracks every logical core, not just the overall average.
 - 📜 **Usage history** — a **Top offenders (this session)** ranking by accumulated *core-time* surfaces
   the quiet, steady consumers (the editor at 25% that never lets go), plus a saved log of past alerts.
-- 🔔 **Sustained-load alerts** — fires only when a core stays above your threshold for a set duration,
-  with hysteresis and a per-core cooldown to avoid spam. Threshold goes as low as 10% to catch
-  moderate-but-constant load.
+- 🔔 **Sustained-load alerts, two ways** — a **per-process** alert when one app keeps holding a core
+  (e.g. ≥25% for 10 min — the quiet cooker), and a **per-core** alert when any core stays hot too long.
+  Both use hysteresis and a cooldown to avoid spam; the core threshold goes as low as 10%.
 - 🕵️ **Culprit detection** — every alert names the top processes likely responsible, with their CPU share.
 - 📊 **Informative live tray icon** — five modern styles, hottest-core load front and center, with
   **color driven by duration** so brief spikes stay calm and only sustained load warms to red.

@@ -18,6 +18,7 @@ internal sealed class TrayAppContext : ApplicationContext
     private readonly CpuSampler _sampler;
     private readonly ProcessSampler _processSampler = new();
     private readonly LoadDetector _detector;
+    private readonly ProcessLoadDetector _procDetector = new();
     private readonly TrayIconRenderer _renderer = new();
     private readonly ToastNotifier _notifier = new();
     private readonly UsageHistory _history = new();
@@ -39,6 +40,7 @@ internal sealed class TrayAppContext : ApplicationContext
         _sampler = new CpuSampler();
         _detector = new LoadDetector(_sampler.CoreCount);
         _detector.Alert += OnAlert;
+        _procDetector.Alert += OnProcessAlert;
         ApplySettings();
 
         try { _appIcon = Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? SystemIcons.Application; }
@@ -85,6 +87,9 @@ internal sealed class TrayAppContext : ApplicationContext
         _detector.ThresholdPercent = _settings.ThresholdPercent;
         _detector.DurationSeconds = _settings.DurationSeconds;
         _detector.Cooldown = TimeSpan.FromMinutes(_settings.CooldownMinutes);
+        _procDetector.ThresholdCores = _settings.ProcessThresholdPercent / 100.0;
+        _procDetector.DurationSeconds = _settings.ProcessDurationMinutes * 60;
+        _procDetector.Cooldown = TimeSpan.FromMinutes(_settings.CooldownMinutes);
         _renderer.Style = _settings.IconStyle;
     }
 
@@ -104,6 +109,8 @@ internal sealed class TrayAppContext : ApplicationContext
         _processSampler.Sample();
         _history.Accumulate(_processSampler.LastLoads, _settings.PollIntervalSeconds, DateTime.Now);
         _detector.Update(_sampler.CoreLoads, _settings.PollIntervalSeconds, DateTime.Now);
+        if (_settings.ProcessAlertsEnabled)
+            _procDetector.Update(_processSampler.LastLoads, _settings.PollIntervalSeconds, DateTime.Now);
 
         float hottest = 0f;
         for (int i = 0; i < _sampler.CoreCount; i++)
@@ -151,6 +158,16 @@ internal sealed class TrayAppContext : ApplicationContext
 
         if (_settings.NotificationsEnabled)
             _notifier.ShowAlert(alert, culprits);
+    }
+
+    private void OnProcessAlert(ProcessAlert alert)
+    {
+        // в журнал истории (без привязки к конкретному ядру)
+        _history.AddAlert(new AlertRecord(
+            DateTime.Now, Array.Empty<int>(), alert.Name, alert.Cores, alert.Duration.TotalSeconds));
+
+        if (_settings.NotificationsEnabled)
+            _notifier.ShowProcessAlert(alert);
     }
 
     /// <summary>Показывает уведомление по текущему самому нагруженному ядру — для проверки, что тосты доходят.</summary>

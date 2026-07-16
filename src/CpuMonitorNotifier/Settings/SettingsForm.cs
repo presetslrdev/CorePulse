@@ -31,7 +31,10 @@ internal sealed class SettingsForm : Form
     private readonly NumericUpDown _duration;
     private readonly NumericUpDown _cooldown;
     private readonly NumericUpDown _pollInterval;
+    private readonly NumericUpDown _procThreshold;
+    private readonly NumericUpDown _procDuration;
     private readonly CheckBox _notifications;
+    private readonly CheckBox _procAlerts;
     private readonly CheckBox _autoStart;
 
     public SettingsForm(AppSettings settings)
@@ -42,14 +45,14 @@ internal sealed class SettingsForm : Form
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
         AutoScaleMode = AutoScaleMode.Font;
-        ClientSize = new Size(430, 322);
+        ClientSize = new Size(440, 410);
         try { Icon = System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
 
         var layout = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             ColumnCount = 2,
-            RowCount = 9,
+            RowCount = 12,
             Padding = new Padding(12),
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 62));
@@ -73,6 +76,10 @@ internal sealed class SettingsForm : Form
             settings.CooldownMinutes, min: 1, max: 120);
         _pollInterval = AddNumericRow(layout, Loc.T("settings.pollInterval"),
             settings.PollIntervalSeconds, min: 1, max: 10);
+        _procThreshold = AddNumericRow(layout, Loc.T("settings.procThreshold"),
+            (decimal)settings.ProcessThresholdPercent, min: 5, max: 100);
+        _procDuration = AddNumericRow(layout, Loc.T("settings.procDuration"),
+            settings.ProcessDurationMinutes, min: 1, max: 120);
 
         _notifications = new CheckBox
         {
@@ -82,6 +89,15 @@ internal sealed class SettingsForm : Form
         };
         layout.Controls.Add(_notifications);
         layout.SetColumnSpan(_notifications, 2);
+
+        _procAlerts = new CheckBox
+        {
+            Text = Loc.T("settings.procAlerts"),
+            Checked = settings.ProcessAlertsEnabled,
+            AutoSize = true,
+        };
+        layout.Controls.Add(_procAlerts);
+        layout.SetColumnSpan(_procAlerts, 2);
 
         _autoStart = new CheckBox
         {
@@ -119,7 +135,10 @@ internal sealed class SettingsForm : Form
         settings.DurationSeconds = (int)_duration.Value;
         settings.CooldownMinutes = (int)_cooldown.Value;
         settings.PollIntervalSeconds = (int)_pollInterval.Value;
+        settings.ProcessThresholdPercent = (float)_procThreshold.Value;
+        settings.ProcessDurationMinutes = (int)_procDuration.Value;
         settings.NotificationsEnabled = _notifications.Checked;
+        settings.ProcessAlertsEnabled = _procAlerts.Checked;
         AutoStart.IsEnabled = _autoStart.Checked;
     }
 

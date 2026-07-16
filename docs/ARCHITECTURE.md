@@ -16,7 +16,8 @@ App/TrayAppContext.cs     composition: sample timer + render timer → CpuSample
 Monitoring/
   CpuSampler.cs           per-core load via PerformanceCounter
   ProcessSampler.cs       process CPU-time deltas → top candidates
-  LoadDetector.cs         sliding window, hysteresis, cooldown → Alert event
+  LoadDetector.cs         per-core sliding window, hysteresis, cooldown → Alert event
+  ProcessLoadDetector.cs  per-process sustained load (the quiet cooker) → ProcessAlert event
   UsageHistory.cs         session core-time per process (top offenders) + alert log + hottest-core timeline
 App/HistoryForm.cs        history window (Top offenders + timeline sparkline + Alerts tabs)
 App/SparklineControl.cs   hottest-core load timeline (shelf vs spike)
@@ -57,12 +58,17 @@ enhancement, behind a settings flag and with an elevation prompt.
 
 ### Detecting "sustained load"
 
-For each logical core, a sliding window of samples:
+Two independent detectors, each with a sliding window, hysteresis and per-key cooldown:
 
-- **trigger**: average ≥ `ThresholdPercent` (default 90%) continuously for `DurationSeconds` (default 60s);
-- **release hysteresis**: the alert clears when load drops below `ThresholdPercent − 10`;
-- **cooldown**: a repeat notification for the same core happens no more often than `CooldownMinutes`
-  (default 5 min).
+- **Per-core** (`LoadDetector`): a core triggers when it averages ≥ `ThresholdPercent` (default 90%)
+  continuously for `DurationSeconds` (default 60s); clears below `ThresholdPercent − 10`.
+- **Per-process** (`ProcessLoadDetector`): the headline "quiet cooker" detector. Aggregates each
+  process's load by name (sum of cores across PIDs) and triggers when a process holds
+  ≥ `ThresholdCores` (default 0.25 = 25% of a core) continuously for `DurationSeconds` (default 10 min);
+  clears below `ThresholdCores − 0.05`. This is what catches the editor steadily using a quarter-core.
+- **cooldown**: a repeat notification for the same core/process is throttled by `CooldownMinutes`.
+
+Both feed the same history log; process alerts are recorded with an empty core list.
 
 ### Tray icon
 

@@ -36,6 +36,21 @@ internal sealed class ToastNotifier : IDisposable
             .Show();
     }
 
+    public void ShowProcessAlert(ProcessAlert alert)
+    {
+        string title = string.Format(Loc.T("toast.proc.title"), alert.Name, FormatDuration(alert.Duration));
+        string body = string.Format(Loc.T("toast.proc.body"),
+            (alert.Cores * 100).ToString("F0", CultureInfo.CurrentCulture));
+
+        new ToastContentBuilder()
+            .AddText(title)
+            .AddText(body)
+            .AddButton(new ToastButton()
+                .SetContent(Loc.T("toast.button.taskmgr"))
+                .AddArgument("action", ActionOpenTaskManager))
+            .Show();
+    }
+
     private static void OnToastActivated(ToastNotificationActivatedEventArgsCompat e)
     {
         var args = ToastArguments.Parse(e.Argument);
