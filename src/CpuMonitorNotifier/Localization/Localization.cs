@@ -139,6 +139,7 @@ internal static class Loc
         ["update.downloading"] = "Downloading CorePulse {0}…",
         ["update.upToDate"] = "You're up to date ({0}).",
         ["update.failed"] = "Update failed: {0}",
+        ["update.failed.network"] = "could not reach GitHub",
         ["error.startFailed"] = "Failed to start monitoring:\n\n{0}",
     };
 
@@ -212,6 +213,7 @@ internal static class Loc
         ["update.downloading"] = "Загрузка CorePulse {0}…",
         ["update.upToDate"] = "У вас последняя версия ({0}).",
         ["update.failed"] = "Не удалось обновить: {0}",
+        ["update.failed.network"] = "не удалось связаться с GitHub",
         ["error.startFailed"] = "Не удалось запустить мониторинг:\n\n{0}",
     };
 
@@ -285,6 +287,7 @@ internal static class Loc
         ["update.downloading"] = "CorePulse {0} wird heruntergeladen…",
         ["update.upToDate"] = "Sie sind auf dem neuesten Stand ({0}).",
         ["update.failed"] = "Update fehlgeschlagen: {0}",
+        ["update.failed.network"] = "GitHub ist nicht erreichbar",
         ["error.startFailed"] = "Überwachung konnte nicht gestartet werden:\n\n{0}",
     };
 
@@ -358,6 +361,7 @@ internal static class Loc
         ["update.downloading"] = "Descargando CorePulse {0}…",
         ["update.upToDate"] = "Estás al día ({0}).",
         ["update.failed"] = "Error al actualizar: {0}",
+        ["update.failed.network"] = "no se pudo conectar con GitHub",
         ["error.startFailed"] = "No se pudo iniciar la monitorización:\n\n{0}",
     };
 
@@ -431,6 +435,7 @@ internal static class Loc
         ["update.downloading"] = "Téléchargement de CorePulse {0}…",
         ["update.upToDate"] = "Vous êtes à jour ({0}).",
         ["update.failed"] = "Échec de la mise à jour : {0}",
+        ["update.failed.network"] = "impossible de joindre GitHub",
         ["error.startFailed"] = "Impossible de démarrer la surveillance :\n\n{0}",
     };
 
@@ -504,6 +509,7 @@ internal static class Loc
         ["update.downloading"] = "Baixando CorePulse {0}…",
         ["update.upToDate"] = "Você está atualizado ({0}).",
         ["update.failed"] = "Falha na atualização: {0}",
+        ["update.failed.network"] = "não foi possível acessar o GitHub",
         ["error.startFailed"] = "Não foi possível iniciar o monitoramento:\n\n{0}",
     };
 
@@ -577,6 +583,7 @@ internal static class Loc
         ["update.downloading"] = "正在下载 CorePulse {0}…",
         ["update.upToDate"] = "已是最新版本（{0}）。",
         ["update.failed"] = "更新失败：{0}",
+        ["update.failed.network"] = "无法连接到 GitHub",
         ["error.startFailed"] = "无法启动监控：\n\n{0}",
     };
 
@@ -650,6 +657,7 @@ internal static class Loc
         ["update.downloading"] = "CorePulse {0} をダウンロードしています…",
         ["update.upToDate"] = "最新バージョンです（{0}）。",
         ["update.failed"] = "更新に失敗しました: {0}",
+        ["update.failed.network"] = "GitHub に接続できませんでした",
         ["error.startFailed"] = "監視を開始できませんでした：\n\n{0}",
     };
 

@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using CpuMonitorNotifier.Localization;
 using CpuMonitorNotifier.Monitoring;
+using CpuMonitorNotifier.Update;
 using Microsoft.Toolkit.Uwp.Notifications;
 
 namespace CpuMonitorNotifier.Notifications;
@@ -10,6 +11,11 @@ namespace CpuMonitorNotifier.Notifications;
 internal sealed class ToastNotifier : IDisposable
 {
     private const string ActionOpenTaskManager = "openTaskManager";
+    private const string ActionUpdate = "installUpdate";
+    private const string ActionNotes = "releaseNotes";
+
+    /// <summary>Нажата кнопка «Обновить» в тосте. Приходит из фонового потока.</summary>
+    public event Action? UpdateRequested;
 
     public ToastNotifier()
     {
@@ -51,19 +57,68 @@ internal sealed class ToastNotifier : IDisposable
             .Show();
     }
 
-    private static void OnToastActivated(ToastNotificationActivatedEventArgsCompat e)
+    public void ShowUpdateAvailable(ReleaseInfo release)
+    {
+        new ToastContentBuilder()
+            .AddText(string.Format(Loc.T("update.available"), release.Version))
+            .AddText(string.Format(Loc.T("update.available.body"), UpdateVersions.Current))
+            .AddButton(new ToastButton()
+                .SetContent(Loc.T("update.button.update"))
+                .AddArgument("action", ActionUpdate))
+            .AddButton(new ToastButton()
+                .SetContent(Loc.T("update.button.notes"))
+                .AddArgument("action", ActionNotes)
+                .AddArgument("url", release.PageUrl)) // ссылку несём в аргументе, чтобы не хранить состояние
+            .Show();
+    }
+
+    /// <summary>Ассет — десятки мегабайт; без этого тоста нажатие «Обновить» выглядит как «ничего не произошло».</summary>
+    public void ShowDownloading(Version version)
+    {
+        new ToastContentBuilder()
+            .AddText(Loc.AppName)
+            .AddText(string.Format(Loc.T("update.downloading"), version))
+            .Show();
+    }
+
+    public void ShowUpdateFailed(string message)
+    {
+        new ToastContentBuilder()
+            .AddText(Loc.AppName)
+            .AddText(string.Format(Loc.T("update.failed"), message))
+            .Show();
+    }
+
+    private void OnToastActivated(ToastNotificationActivatedEventArgsCompat e)
     {
         var args = ToastArguments.Parse(e.Argument);
-        if (args.TryGetValue("action", out string action) && action == ActionOpenTaskManager)
+        if (!args.TryGetValue("action", out string action))
+            return;
+
+        switch (action)
         {
-            try
-            {
-                Process.Start(new ProcessStartInfo("taskmgr.exe") { UseShellExecute = true });
-            }
-            catch
-            {
-                // диспетчер задач может быть заблокирован политикой — молча игнорируем
-            }
+            case ActionOpenTaskManager:
+                Launch("taskmgr.exe");
+                break;
+            case ActionUpdate:
+                UpdateRequested?.Invoke();
+                break;
+            case ActionNotes:
+                if (args.TryGetValue("url", out string url))
+                    Launch(url);
+                break;
+        }
+    }
+
+    private static void Launch(string target)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo(target) { UseShellExecute = true });
+        }
+        catch
+        {
+            // диспетчер задач может быть заблокирован политикой, браузера может не быть — молча игнорируем
         }
     }
 

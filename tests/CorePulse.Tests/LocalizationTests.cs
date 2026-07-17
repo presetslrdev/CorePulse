@@ -40,5 +40,6 @@ public class LocalizationTests
     [InlineData("update.downloading")]
     [InlineData("update.upToDate")]
     [InlineData("update.failed")]
+    [InlineData("update.failed.network")]
     public void UpdateKeysExistInEnglish(string key) => Assert.Contains(key, English().Keys);
 }
