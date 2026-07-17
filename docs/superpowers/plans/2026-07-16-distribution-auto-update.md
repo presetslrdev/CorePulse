@@ -1404,7 +1404,7 @@ git commit -m "feat: hand off the single-instance mutex after a self-update"
 
 > **Deliberate deviation from the spec.** The spec lists seven keys; this plan adds three. A toast needs
 > two lines of text, so `update.available` (title) needs `update.available.body` alongside it.
-> `update.downloading` exists because the self-contained asset is ~70 MB: without it, clicking Update
+> `update.downloading` exists because the self-contained asset is ~58 MB: without it, clicking Update
 > looks like nothing happened, and the user clicks again. `update.failed.network` (added in Task 8)
 > fills the `{0}` of `update.failed` when the check itself could not reach GitHub.
 
@@ -2065,13 +2065,19 @@ jobs:
             ForEach-Object { '{0}  {1}' -f $_.Hash.ToLower(), (Split-Path $_.Path -Leaf) } |
             Set-Content dist/SHA256SUMS.txt -Encoding ascii
 
-      - name: Verify the stamp
+      - name: Sanity-check the assets
         shell: pwsh
         run: |
-          $exe = Get-Item dist/CorePulse.exe
-          if ($exe.Length -lt 20MB) { throw "self-contained build looks too small: $($exe.Length) bytes" }
+          $self = Get-Item dist/CorePulse.exe
           $fx = Get-Item dist/CorePulse-net10.exe
-          if ($fx.Length -gt 20MB) { throw "framework-dependent build looks too big: $($fx.Length) bytes" }
+          # self-contained несёт весь рантайм (~30+ МБ) поверх того же кода — эта разница в размере
+          # и есть подпись правильной пары. Абсолютный порог не годится: framework-сборка уже ~24 МБ
+          # (в неё входит проекция Windows Runtime, Microsoft.Windows.SDK.NET.dll), и оба размера
+          # поплывут с версиями .NET. Проверяем их относительно друг друга.
+          if ($fx.Length -lt 5MB) { throw "framework-dependent build looks too small: $($fx.Length) bytes" }
+          if (($self.Length - $fx.Length) -lt 15MB) {
+            throw "self-contained ($($self.Length)) should dwarf framework-dependent ($($fx.Length)) — did Collect assets swap them?"
+          }
           Get-Content dist/SHA256SUMS.txt
 
       - name: Create release
@@ -2095,7 +2101,7 @@ dotnet publish src/CpuMonitorNotifier -c Release -r win-x64 --self-contained fal
 ls -la publish/self-contained/CpuMonitorNotifier.exe publish/framework/CpuMonitorNotifier.exe
 ```
 
-Expected: both succeed; the self-contained exe is tens of MB, the framework-dependent one a few MB.
+Expected: both succeed; the self-contained exe is ~58 MB, the framework-dependent one ~24 MB.
 
 - [ ] **Step 4: Verify the stamp reaches the binary**
 
@@ -2155,8 +2161,8 @@ Insert a new section immediately after the closing `</div>` of the badge block a
 
 | File | Pick this if | Size |
 |---|---|---|
-| **`CorePulse.exe`** | You just want it to run. Nothing else needed. | ~70 MB |
-| `CorePulse-net10.exe` | You already have the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0). | ~3 MB |
+| **`CorePulse.exe`** | You just want it to run. Nothing else needed. | ~58 MB |
+| `CorePulse-net10.exe` | You already have the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0). | ~24 MB |
 
 CorePulse keeps itself up to date: it checks GitHub for a new release once a day and offers to update
 with one click. You can turn that off in Settings.
@@ -2262,8 +2268,8 @@ Add a new section after `### Theming`:
 ```markdown
 ### Distribution and updates
 
-CI publishes two single-file win-x64 binaries per tag: `CorePulse.exe` (self-contained, ~70 MB, needs
-no runtime) and `CorePulse-net10.exe` (framework-dependent, ~3 MB). WinForms does not support trimming,
+CI publishes two single-file win-x64 binaries per tag: `CorePulse.exe` (self-contained, ~58 MB, needs
+no runtime) and `CorePulse-net10.exe` (framework-dependent, ~24 MB — the Windows Runtime projection it needs for toasts ships with it). WinForms does not support trimming,
 so the self-contained size is a floor, not an oversight — it buys the removal of the runtime
 prerequisite, which is the barrier that actually stops people.
 

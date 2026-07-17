@@ -41,12 +41,12 @@ single-file, win-x64 binaries and attaches them to the GitHub release:
 
 | Asset | Build | Size | For |
 |---|---|---|---|
-| `CorePulse.exe` | self-contained | ~70 MB | Everyone. Just runs. **Recommended.** |
-| `CorePulse-net10.exe` | framework-dependent | ~3 MB | People who already have the .NET 10 Desktop Runtime. |
+| `CorePulse.exe` | self-contained | ~58 MB | Everyone. Just runs. **Recommended.** |
+| `CorePulse-net10.exe` | framework-dependent | ~24 MB | People who already have the .NET 10 Desktop Runtime. |
 | `SHA256SUMS.txt` | — | — | Integrity check for both. |
 
 Both use `PublishSingleFile` with `IncludeNativeLibrariesForSelfExtract`; the self-contained build adds
-`EnableCompressionInSingleFile`. WinForms does not support trimming, so ~70 MB is the floor for the
+`EnableCompressionInSingleFile`. WinForms does not support trimming, so ~58 MB is the floor for the
 self-contained build — the size buys the removal of the runtime prerequisite, which is the point.
 
 Asset names are a contract: the updater resolves them by exact name. They must not change without
@@ -220,7 +220,7 @@ pinning the repository, HTTPS only, requiring a strictly greater version, and ve
 the swap — but it remains inherently more dangerous than the check-and-notify alternative, which is why
 the degradation path to "just open the page" exists and why the whole feature can be switched off.
 
-**~70 MB per update.** Every self-contained update is a full re-download. Acceptable at CorePulse's
+**~58 MB per update.** Every self-contained update is a full re-download. Acceptable at CorePulse's
 release cadence; delta updates are what would fix it, and they are out of scope.
 
 ## Verification
