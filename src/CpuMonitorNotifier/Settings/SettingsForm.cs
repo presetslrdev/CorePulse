@@ -63,7 +63,7 @@ internal sealed class SettingsForm : Form
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
         AutoScaleMode = AutoScaleMode.Font;
-        ClientSize = new Size(440, 510);
+        const int formWidth = 440;
         try { Icon = System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
         _excluded = new List<string>(settings.ExcludedProcesses);
 
@@ -177,6 +177,10 @@ internal sealed class SettingsForm : Form
         Controls.Add(layout);
         AcceptButton = ok;
         CancelButton = cancel;
+
+        // Высота считается от реального содержимого — число строк меняется (settings.updates
+        // только для сборок с автообновлением), а хардкод рассинхронизировался с ним однажды уже.
+        ClientSize = new Size(formWidth, layout.GetPreferredSize(new Size(formWidth, 0)).Height);
     }
 
     /// <summary>Переносит значения из контролов в настройки и применяет автозапуск. Вызывать при DialogResult.OK.</summary>
