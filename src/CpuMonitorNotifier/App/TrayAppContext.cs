@@ -257,7 +257,7 @@ internal sealed class TrayAppContext : ApplicationContext
         if (DateTime.UtcNow - _settings.LastUpdateCheckUtc < UpdateCheckInterval) return;
 
         _settings.LastUpdateCheckUtc = DateTime.UtcNow;
-        _settings.Save();
+        TrySaveSettings();
 
         var result = await _updates.CheckAsync();
         if (result.Status == UpdateCheckStatus.UpdateAvailable)
@@ -271,22 +271,30 @@ internal sealed class TrayAppContext : ApplicationContext
 
         var result = await _updates.CheckAsync();
         _settings.LastUpdateCheckUtc = DateTime.UtcNow;
-        _settings.Save();
+        TrySaveSettings(); // запись времени — бухгалтерия; её сбой не должен проглотить ответ ниже
 
-        switch (result.Status)
-        {
-            case UpdateCheckStatus.UpdateAvailable:
-                OfferUpdate(result.Release!);
-                break;
-            case UpdateCheckStatus.UpToDate:
-                MessageBox.Show(string.Format(Loc.T("update.upToDate"), UpdateVersions.Current),
-                    Loc.AppName, MessageBoxButtons.OK, MessageBoxIcon.Information);
-                break;
-            default:
-                MessageBox.Show(string.Format(Loc.T("update.failed"), Loc.T("update.failed.network")),
-                    Loc.AppName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                break;
-        }
+        if (result.Status == UpdateCheckStatus.UpdateAvailable)
+            OfferUpdate(result.Release!);
+        else
+            ReportCheckOutcome(result.Status);
+    }
+
+    /// <summary>Показывает исход проверки — только для запрошенных пользователем (ручная проверка, клик по тосту).</summary>
+    private static void ReportCheckOutcome(UpdateCheckStatus status)
+    {
+        if (status == UpdateCheckStatus.UpToDate)
+            MessageBox.Show(string.Format(Loc.T("update.upToDate"), UpdateVersions.Current),
+                Loc.AppName, MessageBoxButtons.OK, MessageBoxIcon.Information);
+        else // Failed (или NotSupported, недостижимо при видимом пункте меню)
+            MessageBox.Show(string.Format(Loc.T("update.failed"), Loc.T("update.failed.network")),
+                Loc.AppName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+    }
+
+    /// <summary>Сохраняет настройки; её сбой (диск/AV/права) не должен рушить операцию, которая только что записала время проверки.</summary>
+    private void TrySaveSettings()
+    {
+        try { _settings.Save(); }
+        catch { /* не записали время последней проверки — не критично, просто проверим снова раньше */ }
     }
 
     private void OfferUpdate(ReleaseInfo release)
@@ -298,28 +306,45 @@ internal sealed class TrayAppContext : ApplicationContext
     /// <summary>Загружает и подменяет .exe. Если подменять нельзя — отправляем на страницу релиза.</summary>
     private async Task StartUpdateAsync()
     {
-        if (_updating || _pendingUpdate is null) return;
-
-        var release = _pendingUpdate;
-        if (!UpdateInstaller.CanSwap())
-        {
-            // каталог недоступен на запись (например, Program Files) — не ломаемся, пусть скачает вручную
-            OpenReleasePage(release.PageUrl);
-            return;
-        }
-
-        _updating = true;
+        if (_updating) return;
+        _updating = true; // до любого await: клики сериализованы UI-потоком, поэтому двойной запуск исключён
         try
         {
+            // Тост живёт в Центре уведомлений и переживает перезапуск — тогда _pendingUpdate уже пуст.
+            // Молчать в ответ на явный клик нельзя: перепрашиваем сервер и сообщаем исход.
+            var release = _pendingUpdate;
+            if (release is null)
+            {
+                var result = await _updates.CheckAsync();
+                if (result.Status != UpdateCheckStatus.UpdateAvailable || result.Release is null)
+                {
+                    ReportCheckOutcome(result.Status);
+                    return;
+                }
+                release = result.Release;
+                _pendingUpdate = release;
+            }
+
+            if (!UpdateInstaller.CanSwap())
+            {
+                // каталог недоступен на запись (например, Program Files) — не ломаемся, пусть скачает вручную
+                OpenReleasePage(release.PageUrl);
+                return;
+            }
+
             _notifier.ShowDownloading(release.Version);
             string file = await _updates.DownloadAsync(release);
             UpdateInstaller.ApplyAndRestart(file); // отсюда процесс уже не вернётся
         }
         catch (Exception ex)
         {
-            _updating = false;
-            _notifier.ShowUpdateFailed(ex.Message);
-            OpenReleasePage(release.PageUrl);
+            _notifier.ShowUpdateFailed(ex.Message); // в т.ч. путь к рабочему файлу после неудачного отката
+            if (_pendingUpdate is not null)
+                OpenReleasePage(_pendingUpdate.PageUrl);
+        }
+        finally
+        {
+            _updating = false; // на успешном пути ApplyAndRestart уже завершает приложение — сюда не дойдём
         }
     }
 
