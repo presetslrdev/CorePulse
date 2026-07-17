@@ -1059,6 +1059,36 @@ public class UpdateInstallerTests : IDisposable
     [Fact]
     public void CurrentExePath_IsAnExistingFile()
         => Assert.True(File.Exists(UpdateInstaller.CurrentExePath));
+
+    [Fact]
+    public void Rollback_SucceedsAndRestoresTheOriginal()
+    {
+        string exe = Path.Combine(_dir, "CorePulse.exe");
+        string old = UpdateInstaller.OldPathFor(exe);
+        File.WriteAllText(old, "original");
+
+        UpdateInstaller.Rollback(old, exe, new IOException("swap failed"));
+
+        Assert.Equal("original", File.ReadAllText(exe));
+        Assert.False(File.Exists(old));
+    }
+
+    [Fact]
+    public void Rollback_WhenItCannotRestore_SaysWhereTheWorkingBinaryIs()
+    {
+        string exe = Path.Combine(_dir, "CorePulse.exe");
+        string old = UpdateInstaller.OldPathFor(exe);
+        File.WriteAllText(old, "original");
+        Directory.CreateDirectory(exe); // каталог на месте .exe — переименовать поверх него нельзя
+
+        var cause = new IOException("swap failed");
+        var ex = Assert.Throws<IOException>(() => UpdateInstaller.Rollback(old, exe, cause));
+
+        // пользователь не должен остаться наедине с пустой папкой: путь к рабочему файлу — в сообщении
+        Assert.Contains(old, ex.Message);
+        Assert.Contains(cause, Assert.IsType<AggregateException>(ex.InnerException).InnerExceptions);
+        Assert.True(File.Exists(old), "the working binary must still exist for the user to restore");
+    }
 }
 ```
 
@@ -1084,13 +1114,19 @@ namespace CpuMonitorNotifier.Update;
 internal static class UpdateInstaller
 {
     private const string OldSuffix = ".old.exe";
+    private const int RollbackAttempts = 3;
+    private const int RollbackDelayMs = 150;
 
     public static string CurrentExePath =>
         Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule!.FileName;
 
     /// <summary>Подменять можно, только если каталог с .exe доступен на запись (иначе — Program Files и т.п.).</summary>
-    public static bool CanSwap() =>
-        IsDirectoryWritable(Path.GetDirectoryName(CurrentExePath) ?? string.Empty);
+    public static bool CanSwap()
+    {
+        string? dir = Path.GetDirectoryName(CurrentExePath);
+        // без каталога проверять нечего: пустая строка увела бы проверку на текущий рабочий каталог
+        return dir is not null && IsDirectoryWritable(dir);
+    }
 
     public static bool IsDirectoryWritable(string dir)
     {
@@ -1123,10 +1159,38 @@ internal static class UpdateInstaller
         {
             File.Move(newFile, exePath);
         }
-        catch
+        catch (Exception swapFailure)
         {
-            File.Move(old, exePath); // откат
-            throw;
+            Rollback(old, exePath, swapFailure);
+            throw; // откат удался — наружу уходит исходная причина
+        }
+    }
+
+    /// <summary>
+    /// Возвращает прежний .exe на место. Единственный момент, когда пользователь может остаться
+    /// вообще без файла, поэтому промах здесь важнее исходной ошибки: типовая причина —
+    /// антивирус, открывший только что переименованный файл, и он обычно отпускает. Если не
+    /// отпустил — говорим прямо, где лежит рабочий файл, вместо молчаливого исчезновения.
+    /// </summary>
+    internal static void Rollback(string old, string exePath, Exception cause)
+    {
+        for (int attempt = 1; attempt <= RollbackAttempts; attempt++)
+        {
+            try
+            {
+                File.Move(old, exePath);
+                return;
+            }
+            catch (Exception rollbackFailure)
+            {
+                if (attempt == RollbackAttempts)
+                    throw new IOException(
+                        $"Update failed and the original could not be restored automatically. " +
+                        $"Your working CorePulse is at '{old}' — rename it back to '{exePath}'.",
+                        new AggregateException(cause, rollbackFailure));
+
+                Thread.Sleep(RollbackDelayMs);
+            }
         }
     }
 
@@ -1152,15 +1216,18 @@ internal static class UpdateInstaller
     private static void TryDelete(string path)
     {
         try { if (File.Exists(path)) File.Delete(path); }
-        catch { /* файл ещё занят — попробуем при следующем запуске */ }
+        catch (IOException) { /* файл ещё занят — попробуем при следующем запуске */ }
+        catch (UnauthorizedAccessException) { /* нет прав на удаление — не критично */ }
     }
 }
 ```
 
+> **Why the rollback needs its own retry.** The first draft of this task did `catch { File.Move(old, exePath); throw; }`. If *that* move failed too, the exception escaped with **no file at the original path** — the exact outcome this whole design exists to prevent, reachable through a second, independent failure. The realistic cause is transient (an antivirus opening the just-renamed file), so a few short retries clear it; and if they don't, the user is told where their working binary is rather than being left to discover an empty folder.
+
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `dotnet test tests/CorePulse.Tests --filter UpdateInstallerTests`
-Expected: PASS — 8 tests passed
+Expected: PASS — 10 tests passed (the failing-rollback test takes ~300 ms: it exhausts the retries)
 
 - [ ] **Step 5: Commit**
 
