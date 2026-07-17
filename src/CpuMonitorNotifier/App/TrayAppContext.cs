@@ -6,6 +6,7 @@ using CpuMonitorNotifier.Notifications;
 using CpuMonitorNotifier.Settings;
 using CpuMonitorNotifier.Theming;
 using CpuMonitorNotifier.Tray;
+using CpuMonitorNotifier.Update;
 
 namespace CpuMonitorNotifier.App;
 
@@ -13,6 +14,9 @@ namespace CpuMonitorNotifier.App;
 internal sealed class TrayAppContext : ApplicationContext
 {
     private const int RenderIntervalMs = 125; // частота перерисовки «живой» иконки
+    private const int FirstUpdateCheckMs = 60_000;      // не тормозим запуск: первая проверка через минуту
+    private const int UpdateCheckPollMs = 3_600_000;    // раз в час смотрим, не прошли ли сутки
+    private static readonly TimeSpan UpdateCheckInterval = TimeSpan.FromHours(24);
 
     private readonly AppSettings _settings;
     private readonly NotifyIcon _trayIcon;
@@ -34,6 +38,14 @@ internal sealed class TrayAppContext : ApplicationContext
     private readonly Icon _appIcon;
     private SettingsForm? _settingsForm;
     private HistoryForm? _historyForm;
+    private readonly UpdateService _updates = new();
+    private readonly System.Windows.Forms.Timer _updateTimer;
+    private readonly ToolStripMenuItem _checkUpdatesItem;
+    // тосты активируются в фоновом потоке; через скрытый control возвращаемся в UI-поток.
+    // SynchronizationContext.Current здесь непригоден: контекст ставит Application.Run, а он ещё не вызван.
+    private readonly Control _marshal = new();
+    private ReleaseInfo? _pendingUpdate;
+    private bool _updating;
 
     public TrayAppContext()
     {
@@ -50,12 +62,17 @@ internal sealed class TrayAppContext : ApplicationContext
         var menu = new ContextMenuStrip();
         _settingsItem = new ToolStripMenuItem(string.Empty, null, (_, _) => ShowSettings());
         _historyItem = new ToolStripMenuItem(string.Empty, null, (_, _) => ShowHistory());
+        _checkUpdatesItem = new ToolStripMenuItem(string.Empty, null, (_, _) => _ = CheckUpdatesManuallyAsync())
+        {
+            Visible = DistributionInfo.UpdatesSupported, // сборке из исходников обновляться неоткуда
+        };
         _testItem = new ToolStripMenuItem(string.Empty, null, (_, _) => SendTestNotification());
         _pauseItem = new ToolStripMenuItem { CheckOnClick = true };
         _pauseItem.CheckedChanged += (_, _) => TogglePause();
         _exitItem = new ToolStripMenuItem(string.Empty, null, (_, _) => ExitApp());
         menu.Items.Add(_settingsItem);
         menu.Items.Add(_historyItem);
+        menu.Items.Add(_checkUpdatesItem);
         menu.Items.Add(_testItem);
         menu.Items.Add(_pauseItem);
         menu.Items.Add(new ToolStripSeparator());
@@ -80,6 +97,24 @@ internal sealed class TrayAppContext : ApplicationContext
         _renderTimer.Start();
 
         OnSample(); // мгновенный первый замер, не дожидаясь секундного тика
+
+        _ = _marshal.Handle; // форсируем создание окна, иначе BeginInvoke бросит
+        _notifier.UpdateRequested += () =>
+        {
+            // тост может активироваться на фоновом потоке уже после ExitApp — тогда _marshal мёртв
+            if (_marshal.IsDisposed) return;
+            try { _marshal.BeginInvoke(() => _ = StartUpdateAsync()); }
+            catch (ObjectDisposedException) { /* закрылись между проверкой и вызовом — не наша забота */ }
+        };
+
+        _updateTimer = new System.Windows.Forms.Timer { Interval = FirstUpdateCheckMs };
+        _updateTimer.Tick += (_, _) =>
+        {
+            _updateTimer.Interval = UpdateCheckPollMs;
+            _ = CheckUpdatesAutomaticallyAsync();
+        };
+        if (DistributionInfo.UpdatesSupported)
+            _updateTimer.Start();
     }
 
     private void ApplySettings()
@@ -100,6 +135,7 @@ internal sealed class TrayAppContext : ApplicationContext
     {
         _settingsItem.Text = Loc.T("menu.settings");
         _historyItem.Text = Loc.T("menu.history");
+        _checkUpdatesItem.Text = Loc.T("menu.checkUpdates");
         _testItem.Text = Loc.T("menu.test");
         _pauseItem.Text = Loc.T("menu.pause");
         _exitItem.Text = Loc.T("menu.exit");
@@ -220,6 +256,115 @@ internal sealed class TrayAppContext : ApplicationContext
         _historyForm.Show();
     }
 
+    /// <summary>Автоматическая проверка: молчит и об ошибке, и об актуальной версии — пользователь её не запрашивал.</summary>
+    private async Task CheckUpdatesAutomaticallyAsync()
+    {
+        if (!_settings.UpdateCheckEnabled || _updating) return;
+        if (DateTime.UtcNow - _settings.LastUpdateCheckUtc < UpdateCheckInterval) return;
+
+        _settings.LastUpdateCheckUtc = DateTime.UtcNow;
+        TrySaveSettings();
+
+        var result = await _updates.CheckAsync();
+        if (result.Status == UpdateCheckStatus.UpdateAvailable)
+            OfferUpdate(result.Release!);
+    }
+
+    /// <summary>Ручная проверка: сообщает любой исход и не считается с суточным интервалом — её попросили.</summary>
+    private async Task CheckUpdatesManuallyAsync()
+    {
+        if (_updating) return;
+        _updating = true; // до любого await: два быстрых клика не должны показать два тоста/диалога
+
+        try
+        {
+            var result = await _updates.CheckAsync();
+            _settings.LastUpdateCheckUtc = DateTime.UtcNow;
+            TrySaveSettings(); // запись времени — бухгалтерия; её сбой не должен проглотить ответ ниже
+
+            if (result.Status == UpdateCheckStatus.UpdateAvailable)
+                OfferUpdate(result.Release!);
+            else
+                ReportCheckOutcome(result.Status);
+        }
+        finally { _updating = false; }
+    }
+
+    /// <summary>Показывает исход проверки — только для запрошенных пользователем (ручная проверка, клик по тосту).</summary>
+    private static void ReportCheckOutcome(UpdateCheckStatus status)
+    {
+        if (status == UpdateCheckStatus.UpToDate)
+            MessageBox.Show(string.Format(Loc.T("update.upToDate"), UpdateVersions.Current),
+                Loc.AppName, MessageBoxButtons.OK, MessageBoxIcon.Information);
+        else // Failed (или NotSupported, недостижимо при видимом пункте меню)
+            MessageBox.Show(string.Format(Loc.T("update.failed"), Loc.T("update.failed.network")),
+                Loc.AppName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+    }
+
+    /// <summary>Сохраняет настройки; её сбой (диск/AV/права) не должен рушить операцию, которая только что записала время проверки.</summary>
+    private void TrySaveSettings()
+    {
+        try { _settings.Save(); }
+        catch { /* не записали время последней проверки — не критично, просто проверим снова раньше */ }
+    }
+
+    private void OfferUpdate(ReleaseInfo release)
+    {
+        _pendingUpdate = release;
+        _notifier.ShowUpdateAvailable(release);
+    }
+
+    /// <summary>Загружает и подменяет .exe. Если подменять нельзя — отправляем на страницу релиза.</summary>
+    private async Task StartUpdateAsync()
+    {
+        if (_updating) return;
+        _updating = true; // до любого await: клики сериализованы UI-потоком, поэтому двойной запуск исключён
+        try
+        {
+            // Тост живёт в Центре уведомлений и переживает перезапуск — тогда _pendingUpdate уже пуст.
+            // Молчать в ответ на явный клик нельзя: перепрашиваем сервер и сообщаем исход.
+            var release = _pendingUpdate;
+            if (release is null)
+            {
+                var result = await _updates.CheckAsync();
+                if (result.Status != UpdateCheckStatus.UpdateAvailable || result.Release is null)
+                {
+                    ReportCheckOutcome(result.Status);
+                    return;
+                }
+                release = result.Release;
+                _pendingUpdate = release;
+            }
+
+            if (!UpdateInstaller.CanSwap())
+            {
+                // каталог недоступен на запись (например, Program Files) — не ломаемся, пусть скачает вручную
+                OpenReleasePage(release.PageUrl);
+                return;
+            }
+
+            _notifier.ShowDownloading(release.Version);
+            string file = await _updates.DownloadAsync(release);
+            UpdateInstaller.ApplyAndRestart(file); // отсюда процесс уже не вернётся
+        }
+        catch (Exception ex)
+        {
+            _notifier.ShowUpdateFailed(ex.Message); // в т.ч. путь к рабочему файлу после неудачного отката
+            if (_pendingUpdate is not null)
+                OpenReleasePage(_pendingUpdate.PageUrl);
+        }
+        finally
+        {
+            _updating = false; // на успешном пути ApplyAndRestart уже завершает приложение — сюда не дойдём
+        }
+    }
+
+    private static void OpenReleasePage(string url)
+    {
+        try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
+        catch { /* браузера может не быть — тогда ничего не делаем */ }
+    }
+
     private void TogglePause()
     {
         if (_pauseItem.Checked)
@@ -251,6 +396,8 @@ internal sealed class TrayAppContext : ApplicationContext
         _renderer.Dispose();
         _sampler.Dispose();
         _notifier.Dispose();
+        _updateTimer.Stop();
+        _marshal.Dispose();
         Application.Exit();
     }
 }

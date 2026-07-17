@@ -234,15 +234,31 @@ namespace CorePulse.Tests;
 
 public class DistributionInfoTests
 {
-    [Theory]
-    [InlineData("self-contained", DistributionKind.SelfContained)]
-    [InlineData("framework", DistributionKind.Framework)]
-    [InlineData("source", DistributionKind.Source)]
-    [InlineData("", DistributionKind.Source)]
-    [InlineData(null, DistributionKind.Source)]
-    [InlineData("nonsense", DistributionKind.Source)]
-    public void Parse_MapsStampToKind(string? stamp, DistributionKind expected)
-        => Assert.Equal(expected, DistributionInfo.Parse(stamp));
+    // Отдельные Fact, а не Theory с параметром DistributionKind: внутренний тип в сигнатуре
+    // публичного метода даёт CS0051, а xunit требует публичный тест-класс. В теле метода — можно.
+    [Fact]
+    public void Parse_SelfContainedStamp()
+        => Assert.Equal(DistributionKind.SelfContained, DistributionInfo.Parse("self-contained"));
+
+    [Fact]
+    public void Parse_FrameworkStamp()
+        => Assert.Equal(DistributionKind.Framework, DistributionInfo.Parse("framework"));
+
+    [Fact]
+    public void Parse_SourceStamp()
+        => Assert.Equal(DistributionKind.Source, DistributionInfo.Parse("source"));
+
+    [Fact]
+    public void Parse_EmptyStampIsSource()
+        => Assert.Equal(DistributionKind.Source, DistributionInfo.Parse(""));
+
+    [Fact]
+    public void Parse_MissingStampIsSource()
+        => Assert.Equal(DistributionKind.Source, DistributionInfo.Parse(null));
+
+    [Fact]
+    public void Parse_UnknownStampIsSource()
+        => Assert.Equal(DistributionKind.Source, DistributionInfo.Parse("nonsense"));
 
     [Fact]
     public void AssetNameFor_SelfContained() =>
@@ -333,6 +349,12 @@ internal static class DistributionInfo
 
 Run: `dotnet test tests/CorePulse.Tests --filter DistributionInfoTests`
 Expected: PASS — 11 tests passed
+
+> **C# constraint, learned the hard way.** Internal types must not appear in the *signature* of a
+> public test method — `[Theory] public void T(DistributionKind k)` fails with **CS0051** even with
+> `InternalsVisibleTo`, because the attribute grants access without raising the type's accessibility,
+> and xUnit requires public test classes. Using the internal type inside a method *body* is fine.
+> This applies to every later task that tests an internal enum or record.
 
 - [ ] **Step 6: Verify the CI override works**
 
@@ -505,6 +527,20 @@ public class GitHubReleasesTests
     [Fact]
     public void ParseSha256Sums_IgnoresLinesThatAreNotHashes()
         => Assert.Null(GitHubReleases.ParseSha256Sums("deadbeef  CorePulse.exe\n", "CorePulse.exe"));
+
+    [Fact]
+    public void ParseSha256Sums_IgnoresRightLengthButNonHexToken()
+        => Assert.Null(GitHubReleases.ParseSha256Sums(new string('z', 64) + "  CorePulse.exe\n", "CorePulse.exe"));
+
+    [Fact]
+    public async Task FetchLatestAsync_LetsRealCancellationThrough()
+    {
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+        // отмена — команда вызывающего, а не сбой проверки: она обязана дойти наружу
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => GitHubReleases.FetchLatestAsync("CorePulse.exe", cts.Token));
+    }
 }
 ```
 
@@ -580,8 +616,14 @@ internal static class GitHubReleases
             string? hash = ParseSha256Sums(await http.GetStringAsync(parsed.SumsUrl, ct), assetName);
             return hash is null ? null : new ReleaseInfo(parsed.Version, parsed.AssetUrl, hash, parsed.PageUrl);
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw; // нас отменили — это не сбой проверки, глушить нельзя
+        }
         catch (Exception)
         {
+            // офлайн, лимит запросов, битый релиз, таймаут HttpClient (тоже TaskCanceledException,
+            // но без запроса отмены) — всё это сбои: проверка молча не состоялась
             return null;
         }
     }
@@ -637,13 +679,22 @@ internal static class GitHubReleases
         foreach (string line in text.Split('\n'))
         {
             string[] parts = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length < 2 || parts[0].Length != Sha256HexLength) continue;
+            if (parts.Length < 2 || !IsSha256Hex(parts[0])) continue;
 
             string name = parts[^1].TrimStart('*'); // coreutils помечает двоичный режим звёздочкой
             if (string.Equals(name, fileName, StringComparison.OrdinalIgnoreCase))
                 return parts[0].ToLowerInvariant();
         }
         return null;
+    }
+
+    /// <summary>Ровно 64 шестнадцатеричных символа — иначе это не строка хеша, а что-то ещё.</summary>
+    private static bool IsSha256Hex(string s)
+    {
+        if (s.Length != Sha256HexLength) return false;
+        foreach (char c in s)
+            if (!Uri.IsHexDigit(c)) return false;
+        return true;
     }
 
     private static string? GetString(JsonElement e, string property) =>
@@ -654,7 +705,15 @@ internal static class GitHubReleases
 - [ ] **Step 6: Run tests to verify they pass**
 
 Run: `dotnet test tests/CorePulse.Tests --filter "GitHubReleasesTests|FileHashTests"`
-Expected: PASS — 14 tests passed
+Expected: PASS — 16 tests passed
+
+> **Why `FetchLatestAsync` does not swallow cancellation.** The null-on-failure contract covers
+> *failures* — offline, rate limit, a malformed release. Caller-initiated cancellation is not a
+> failure, and reporting it as "no update available" would hide that the check never ran. The subtlety
+> is that `HttpClient`'s own **timeout** also surfaces as `TaskCanceledException`, and that one *is* a
+> failure — so the filter is `when (ct.IsCancellationRequested)`, which is true only for real
+> cancellation. `FetchLatestAsync_LetsRealCancellationThrough` pins this; it makes no network call
+> because a pre-cancelled token throws before the request is sent.
 
 - [ ] **Step 7: Commit**
 
@@ -826,14 +885,18 @@ internal sealed class UpdateService
             return File.OpenRead(uri.LocalPath);
 
         var http = GitHubReleases.CreateClient();
+        HttpResponseMessage? response = null;
         try
         {
-            var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
+            response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
             response.EnsureSuccessStatusCode();
             return new HttpOwnedStream(await response.Content.ReadAsStreamAsync(ct), http, response);
         }
         catch
         {
+            // EnsureSuccessStatusCode бросает уже после того, как ответ получен: освободить надо оба,
+            // Dispose у HttpClient не закрывает выданные им ответы
+            response?.Dispose();
             http.Dispose();
             throw;
         }
@@ -851,7 +914,8 @@ internal sealed class UpdateService
         public override bool CanRead => inner.CanRead;
         public override bool CanSeek => false;
         public override bool CanWrite => false;
-        public override long Length => inner.Length;
+        // поток ответа последовательный: длина неизвестна при chunked-передаче, врать про неё нельзя
+        public override long Length => throw new NotSupportedException();
         public override long Position { get => inner.Position; set => throw new NotSupportedException(); }
         public override void Flush() => inner.Flush();
         public override int Read(byte[] buffer, int offset, int count) => inner.Read(buffer, offset, count);
@@ -995,6 +1059,36 @@ public class UpdateInstallerTests : IDisposable
     [Fact]
     public void CurrentExePath_IsAnExistingFile()
         => Assert.True(File.Exists(UpdateInstaller.CurrentExePath));
+
+    [Fact]
+    public void Rollback_SucceedsAndRestoresTheOriginal()
+    {
+        string exe = Path.Combine(_dir, "CorePulse.exe");
+        string old = UpdateInstaller.OldPathFor(exe);
+        File.WriteAllText(old, "original");
+
+        UpdateInstaller.Rollback(old, exe, new IOException("swap failed"));
+
+        Assert.Equal("original", File.ReadAllText(exe));
+        Assert.False(File.Exists(old));
+    }
+
+    [Fact]
+    public void Rollback_WhenItCannotRestore_SaysWhereTheWorkingBinaryIs()
+    {
+        string exe = Path.Combine(_dir, "CorePulse.exe");
+        string old = UpdateInstaller.OldPathFor(exe);
+        File.WriteAllText(old, "original");
+        Directory.CreateDirectory(exe); // каталог на месте .exe — переименовать поверх него нельзя
+
+        var cause = new IOException("swap failed");
+        var ex = Assert.Throws<IOException>(() => UpdateInstaller.Rollback(old, exe, cause));
+
+        // пользователь не должен остаться наедине с пустой папкой: путь к рабочему файлу — в сообщении
+        Assert.Contains(old, ex.Message);
+        Assert.Contains(cause, Assert.IsType<AggregateException>(ex.InnerException).InnerExceptions);
+        Assert.True(File.Exists(old), "the working binary must still exist for the user to restore");
+    }
 }
 ```
 
@@ -1020,13 +1114,19 @@ namespace CpuMonitorNotifier.Update;
 internal static class UpdateInstaller
 {
     private const string OldSuffix = ".old.exe";
+    private const int RollbackAttempts = 3;
+    private const int RollbackDelayMs = 150;
 
     public static string CurrentExePath =>
         Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule!.FileName;
 
     /// <summary>Подменять можно, только если каталог с .exe доступен на запись (иначе — Program Files и т.п.).</summary>
-    public static bool CanSwap() =>
-        IsDirectoryWritable(Path.GetDirectoryName(CurrentExePath) ?? string.Empty);
+    public static bool CanSwap()
+    {
+        string? dir = Path.GetDirectoryName(CurrentExePath);
+        // без каталога проверять нечего: пустая строка увела бы проверку на текущий рабочий каталог
+        return dir is not null && IsDirectoryWritable(dir);
+    }
 
     public static bool IsDirectoryWritable(string dir)
     {
@@ -1059,10 +1159,38 @@ internal static class UpdateInstaller
         {
             File.Move(newFile, exePath);
         }
-        catch
+        catch (Exception swapFailure)
         {
-            File.Move(old, exePath); // откат
-            throw;
+            Rollback(old, exePath, swapFailure);
+            throw; // откат удался — наружу уходит исходная причина
+        }
+    }
+
+    /// <summary>
+    /// Возвращает прежний .exe на место. Единственный момент, когда пользователь может остаться
+    /// вообще без файла, поэтому промах здесь важнее исходной ошибки: типовая причина —
+    /// антивирус, открывший только что переименованный файл, и он обычно отпускает. Если не
+    /// отпустил — говорим прямо, где лежит рабочий файл, вместо молчаливого исчезновения.
+    /// </summary>
+    internal static void Rollback(string old, string exePath, Exception cause)
+    {
+        for (int attempt = 1; attempt <= RollbackAttempts; attempt++)
+        {
+            try
+            {
+                File.Move(old, exePath);
+                return;
+            }
+            catch (Exception rollbackFailure)
+            {
+                if (attempt == RollbackAttempts)
+                    throw new IOException(
+                        $"Update failed and the original could not be restored automatically. " +
+                        $"Your working CorePulse is at '{old}' — rename it back to '{exePath}'.",
+                        new AggregateException(cause, rollbackFailure));
+
+                Thread.Sleep(RollbackDelayMs);
+            }
         }
     }
 
@@ -1088,15 +1216,18 @@ internal static class UpdateInstaller
     private static void TryDelete(string path)
     {
         try { if (File.Exists(path)) File.Delete(path); }
-        catch { /* файл ещё занят — попробуем при следующем запуске */ }
+        catch (IOException) { /* файл ещё занят — попробуем при следующем запуске */ }
+        catch (UnauthorizedAccessException) { /* нет прав на удаление — не критично */ }
     }
 }
 ```
 
+> **Why the rollback needs its own retry.** The first draft of this task did `catch { File.Move(old, exePath); throw; }`. If *that* move failed too, the exception escaped with **no file at the original path** — the exact outcome this whole design exists to prevent, reachable through a second, independent failure. The realistic cause is transient (an antivirus opening the just-renamed file), so a few short retries clear it; and if they don't, the user is told where their working binary is rather than being left to discover an empty folder.
+
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `dotnet test tests/CorePulse.Tests --filter UpdateInstallerTests`
-Expected: PASS — 8 tests passed
+Expected: PASS — 10 tests passed (the failing-rollback test takes ~300 ms: it exhausts the retries)
 
 - [ ] **Step 5: Commit**
 
@@ -1135,15 +1266,25 @@ internal static class Program
 {
     private const string UpdatedFlag = "--updated";
     private const int OldProcessExitTimeoutMs = 10_000;
+    private const int MutexHandoffTimeoutMs = 10_000;
 
     [STAThread]
     private static void Main(string[] args)
     {
-        WaitForReplacedProcess(args); // до мьютекса: старый экземпляр ещё держит его
+        int? replacedPid = ParseUpdatedPid(args);
+        if (replacedPid is int pid)
+            WaitForProcessExit(pid); // до мьютекса: старый экземпляр ещё держит его
 
         using var mutex = new Mutex(initiallyOwned: true, "CpuMonitorNotifier_SingleInstance", out bool createdNew);
         if (!createdNew)
-            return; // уже запущен — вторую иконку не создаём
+        {
+            // Обычный второй запуск — молча выходим, вторую иконку не создаём. Но после
+            // самообновления мьютекс мог ещё держать не успевший умереть старый экземпляр:
+            // сдаться здесь значит оставить пользователя вообще без приложения — ровно то,
+            // что этот handoff и предотвращает. Поэтому ждём освобождения, а не выходим.
+            if (replacedPid is null || !WaitForMutex(mutex, MutexHandoffTimeoutMs))
+                return;
+        }
 
         UpdateInstaller.CleanupOldFile(); // остаток прошлого обновления: раньше файл был занят
 
@@ -1166,28 +1307,60 @@ internal static class Program
         }
     }
 
+    /// <summary>PID заменённого экземпляра из «--updated &lt;pid&gt;»; null — обычный запуск.</summary>
+    private static int? ParseUpdatedPid(string[] args)
+    {
+        int i = Array.IndexOf(args, UpdatedFlag);
+        return i >= 0 && i + 1 < args.Length && int.TryParse(args[i + 1], out int pid) ? pid : null;
+    }
+
     /// <summary>
     /// После самообновления новый экземпляр стартует, пока старый ещё жив. Без ожидания он увидел бы
     /// занятый мьютекс и молча вышел — пользователь остался бы вообще без приложения.
     /// </summary>
-    private static void WaitForReplacedProcess(string[] args)
+    private static void WaitForProcessExit(int pid)
     {
-        int i = Array.IndexOf(args, UpdatedFlag);
-        if (i < 0 || i + 1 >= args.Length || !int.TryParse(args[i + 1], out int pid))
-            return;
-
         try
         {
             using var old = Process.GetProcessById(pid);
             old.WaitForExit(OldProcessExitTimeoutMs);
         }
-        catch (ArgumentException)
+        catch (Exception)
         {
-            // процесс уже завершился — ждать нечего
+            // Процесс уже завершился (ArgumentException), либо к нему нет доступа
+            // (Win32Exception при переиспользованном PID защищённого процесса). Ждать нечего,
+            // но упасть здесь нельзя: это до создания иконки — приложение просто не запустится.
+        }
+    }
+
+    /// <summary>Ждёт, пока предыдущий экземпляр отпустит мьютекс. false — не дождались.</summary>
+    private static bool WaitForMutex(Mutex mutex, int timeoutMs)
+    {
+        try
+        {
+            return mutex.WaitOne(timeoutMs);
+        }
+        catch (AbandonedMutexException)
+        {
+            return true; // старый процесс умер, не отпустив мьютекс — он всё равно наш
         }
     }
 }
 ```
+
+> **Two failure modes this task must not have.** Both were caught in review of the first draft.
+>
+> The first is that the app never starts: the original `catch (ArgumentException)` was narrower than what
+> `GetProcessById`/`WaitForExit` actually throw (`Win32Exception` on a PID reused by a protected
+> process, `InvalidOperationException`), and this code runs *before* the tray icon exists and outside
+> `Main`'s only try/catch. An escaping exception meant no app at all.
+>
+> The second is subtler: if the 10 s wait expired while the old instance was still alive and still
+> holding the mutex, the new instance hit `!createdNew` and returned silently — reproducing the exact
+> "nothing running after clicking Update" bug the handoff exists to prevent, just with extra steps.
+> Waiting on the mutex closes that: the handoff no longer depends on the old process dying inside one
+> fixed window. `AbandonedMutexException` counts as success — it means the old process died without
+> releasing, which is precisely when we most need to take over.
 
 - [ ] **Step 2: Build and smoke test**
 
@@ -1231,7 +1404,7 @@ git commit -m "feat: hand off the single-instance mutex after a self-update"
 
 > **Deliberate deviation from the spec.** The spec lists seven keys; this plan adds three. A toast needs
 > two lines of text, so `update.available` (title) needs `update.available.body` alongside it.
-> `update.downloading` exists because the self-contained asset is ~70 MB: without it, clicking Update
+> `update.downloading` exists because the self-contained asset is ~58 MB: without it, clicking Update
 > looks like nothing happened, and the user clicks again. `update.failed.network` (added in Task 8)
 > fills the `{0}` of `update.failed` when the check itself could not reach GitHub.
 
@@ -1656,7 +1829,7 @@ Add these methods before `TogglePause`:
         if (DateTime.UtcNow - _settings.LastUpdateCheckUtc < UpdateCheckInterval) return;
 
         _settings.LastUpdateCheckUtc = DateTime.UtcNow;
-        _settings.Save();
+        TrySaveSettings();
 
         var result = await _updates.CheckAsync();
         if (result.Status == UpdateCheckStatus.UpdateAvailable)
@@ -1670,22 +1843,30 @@ Add these methods before `TogglePause`:
 
         var result = await _updates.CheckAsync();
         _settings.LastUpdateCheckUtc = DateTime.UtcNow;
-        _settings.Save();
+        TrySaveSettings(); // запись времени — бухгалтерия; её сбой не должен проглотить ответ ниже
 
-        switch (result.Status)
-        {
-            case UpdateCheckStatus.UpdateAvailable:
-                OfferUpdate(result.Release!);
-                break;
-            case UpdateCheckStatus.UpToDate:
-                MessageBox.Show(string.Format(Loc.T("update.upToDate"), UpdateVersions.Current),
-                    Loc.AppName, MessageBoxButtons.OK, MessageBoxIcon.Information);
-                break;
-            default:
-                MessageBox.Show(string.Format(Loc.T("update.failed"), Loc.T("update.failed.network")),
-                    Loc.AppName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                break;
-        }
+        if (result.Status == UpdateCheckStatus.UpdateAvailable)
+            OfferUpdate(result.Release!);
+        else
+            ReportCheckOutcome(result.Status);
+    }
+
+    /// <summary>Показывает исход проверки — только для запрошенных пользователем (ручная проверка, клик по тосту).</summary>
+    private static void ReportCheckOutcome(UpdateCheckStatus status)
+    {
+        if (status == UpdateCheckStatus.UpToDate)
+            MessageBox.Show(string.Format(Loc.T("update.upToDate"), UpdateVersions.Current),
+                Loc.AppName, MessageBoxButtons.OK, MessageBoxIcon.Information);
+        else // Failed (или NotSupported, недостижимо при видимом пункте меню)
+            MessageBox.Show(string.Format(Loc.T("update.failed"), Loc.T("update.failed.network")),
+                Loc.AppName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+    }
+
+    /// <summary>Сохраняет настройки; её сбой (диск/AV/права) не должен рушить операцию, которая только что записала время проверки.</summary>
+    private void TrySaveSettings()
+    {
+        try { _settings.Save(); }
+        catch { /* не записали время последней проверки — не критично, просто проверим снова раньше */ }
     }
 
     private void OfferUpdate(ReleaseInfo release)
@@ -1697,28 +1878,45 @@ Add these methods before `TogglePause`:
     /// <summary>Загружает и подменяет .exe. Если подменять нельзя — отправляем на страницу релиза.</summary>
     private async Task StartUpdateAsync()
     {
-        if (_updating || _pendingUpdate is null) return;
-
-        var release = _pendingUpdate;
-        if (!UpdateInstaller.CanSwap())
-        {
-            // каталог недоступен на запись (например, Program Files) — не ломаемся, пусть скачает вручную
-            OpenReleasePage(release.PageUrl);
-            return;
-        }
-
-        _updating = true;
+        if (_updating) return;
+        _updating = true; // до любого await: клики сериализованы UI-потоком, поэтому двойной запуск исключён
         try
         {
+            // Тост живёт в Центре уведомлений и переживает перезапуск — тогда _pendingUpdate уже пуст.
+            // Молчать в ответ на явный клик нельзя: перепрашиваем сервер и сообщаем исход.
+            var release = _pendingUpdate;
+            if (release is null)
+            {
+                var result = await _updates.CheckAsync();
+                if (result.Status != UpdateCheckStatus.UpdateAvailable || result.Release is null)
+                {
+                    ReportCheckOutcome(result.Status);
+                    return;
+                }
+                release = result.Release;
+                _pendingUpdate = release;
+            }
+
+            if (!UpdateInstaller.CanSwap())
+            {
+                // каталог недоступен на запись (например, Program Files) — не ломаемся, пусть скачает вручную
+                OpenReleasePage(release.PageUrl);
+                return;
+            }
+
             _notifier.ShowDownloading(release.Version);
             string file = await _updates.DownloadAsync(release);
             UpdateInstaller.ApplyAndRestart(file); // отсюда процесс уже не вернётся
         }
         catch (Exception ex)
         {
-            _updating = false;
-            _notifier.ShowUpdateFailed(ex.Message);
-            OpenReleasePage(release.PageUrl);
+            _notifier.ShowUpdateFailed(ex.Message); // в т.ч. путь к рабочему файлу после неудачного отката
+            if (_pendingUpdate is not null)
+                OpenReleasePage(_pendingUpdate.PageUrl);
+        }
+        finally
+        {
+            _updating = false; // на успешном пути ApplyAndRestart уже завершает приложение — сюда не дойдём
         }
     }
 
@@ -1735,6 +1933,22 @@ Add to `ExitApp`, before `Application.Exit();`:
         _updateTimer.Stop();
         _marshal.Dispose();
 ```
+
+> **Two silent-failure paths this closes** (both found in review of the first draft, both plan-mandated
+> at the time):
+>
+> - `AppSettings.Save()` does an unguarded `File.WriteAllText`. It runs in the manual check *before* the
+>   outcome is reported, so a disk/AV/permission error there meant the user who clicked "Check for
+>   updates…" got no toast, no dialog, nothing — the exception vanished into the fire-and-forget task.
+>   Persisting the last-check timestamp is bookkeeping; `TrySaveSettings` swallows its failure so the
+>   report below it always runs.
+> - The update toast lives in the Windows Action Center and outlives the process. After a restart the
+>   in-memory `_pendingUpdate` is gone, so clicking a lingering "Update" button hit `_pendingUpdate is
+>   null` and returned silently — a visible click that did nothing. `StartUpdateAsync` now re-queries
+>   the server on the null path and reports the outcome. The re-query adds an `await`, so `_updating`
+>   must be set *before* it — otherwise two rapid clicks each pass the guard and start two downloads,
+>   the exact race the single-flag design prevents. Setting the flag first, inside a `try/finally`,
+>   keeps that guarantee.
 
 - [ ] **Step 3: Add the one missing string**
 
@@ -1851,13 +2065,19 @@ jobs:
             ForEach-Object { '{0}  {1}' -f $_.Hash.ToLower(), (Split-Path $_.Path -Leaf) } |
             Set-Content dist/SHA256SUMS.txt -Encoding ascii
 
-      - name: Verify the stamp
+      - name: Sanity-check the assets
         shell: pwsh
         run: |
-          $exe = Get-Item dist/CorePulse.exe
-          if ($exe.Length -lt 20MB) { throw "self-contained build looks too small: $($exe.Length) bytes" }
+          $self = Get-Item dist/CorePulse.exe
           $fx = Get-Item dist/CorePulse-net10.exe
-          if ($fx.Length -gt 20MB) { throw "framework-dependent build looks too big: $($fx.Length) bytes" }
+          # self-contained несёт весь рантайм (~30+ МБ) поверх того же кода — эта разница в размере
+          # и есть подпись правильной пары. Абсолютный порог не годится: framework-сборка уже ~24 МБ
+          # (в неё входит проекция Windows Runtime, Microsoft.Windows.SDK.NET.dll), и оба размера
+          # поплывут с версиями .NET. Проверяем их относительно друг друга.
+          if ($fx.Length -lt 5MB) { throw "framework-dependent build looks too small: $($fx.Length) bytes" }
+          if (($self.Length - $fx.Length) -lt 15MB) {
+            throw "self-contained ($($self.Length)) should dwarf framework-dependent ($($fx.Length)) — did Collect assets swap them?"
+          }
           Get-Content dist/SHA256SUMS.txt
 
       - name: Create release
@@ -1881,7 +2101,7 @@ dotnet publish src/CpuMonitorNotifier -c Release -r win-x64 --self-contained fal
 ls -la publish/self-contained/CpuMonitorNotifier.exe publish/framework/CpuMonitorNotifier.exe
 ```
 
-Expected: both succeed; the self-contained exe is tens of MB, the framework-dependent one a few MB.
+Expected: both succeed; the self-contained exe is ~58 MB, the framework-dependent one ~24 MB.
 
 - [ ] **Step 4: Verify the stamp reaches the binary**
 
@@ -1941,8 +2161,8 @@ Insert a new section immediately after the closing `</div>` of the badge block a
 
 | File | Pick this if | Size |
 |---|---|---|
-| **`CorePulse.exe`** | You just want it to run. Nothing else needed. | ~70 MB |
-| `CorePulse-net10.exe` | You already have the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0). | ~3 MB |
+| **`CorePulse.exe`** | You just want it to run. Nothing else needed. | ~58 MB |
+| `CorePulse-net10.exe` | You already have the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0). | ~24 MB |
 
 CorePulse keeps itself up to date: it checks GitHub for a new release once a day and offers to update
 with one click. You can turn that off in Settings.
@@ -2048,8 +2268,8 @@ Add a new section after `### Theming`:
 ```markdown
 ### Distribution and updates
 
-CI publishes two single-file win-x64 binaries per tag: `CorePulse.exe` (self-contained, ~70 MB, needs
-no runtime) and `CorePulse-net10.exe` (framework-dependent, ~3 MB). WinForms does not support trimming,
+CI publishes two single-file win-x64 binaries per tag: `CorePulse.exe` (self-contained, ~58 MB, needs
+no runtime) and `CorePulse-net10.exe` (framework-dependent, ~24 MB — the Windows Runtime projection it needs for toasts ships with it). WinForms does not support trimming,
 so the self-contained size is a floor, not an oversight — it buys the removal of the runtime
 prerequisite, which is the barrier that actually stops people.
 
@@ -2155,6 +2375,16 @@ then with the **1.5.0** binary still installed in a writable folder:
 4. Verify the new version: the tray menu → "Check for updates…" reports **up to date (1.5.1)**.
 5. Verify settings and history survived: `%AppData%\CpuMonitorNotifier\settings.json` and `history.json` are intact.
 6. Verify cleanup: `CorePulse.old.exe` is gone from the folder after the restart.
+7. **Confirm the tray icon is actually visible** — not merely that a process is alive. Every automated
+   check in tasks 1–10 uses process-liveness as a proxy; a process can survive with a failed icon and
+   no automated check here would catch it.
+
+**This step is the only test of the mutex handoff, and it must be treated as a deliberate target, not
+an incidental one.** Task 6's contended path — the mutex being held *while* `--updated <pid>` was
+passed — is unreachable from any unit test: it needs a real swap against a live instance. That path is
+exactly where the "user clicks Update and ends up with nothing" bug lives, so a successful step 3 (the
+app coming back) IS the test. If the app does not reappear, do not retry blindly — that is the bug,
+and the `AbandonedMutexException → true` branch is the next thing to suspect.
 
 If any step fails, **do not leave a broken release published** — that is the risk this whole design is
 built around. `gh release delete` the bad tag and fix forward.

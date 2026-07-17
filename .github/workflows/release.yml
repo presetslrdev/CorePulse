@@ -1,0 +1,77 @@
+name: release
+
+on:
+  push:
+    tags: [ 'v*' ]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Test
+        run: dotnet test tests/CorePulse.Tests -c Release
+
+      # Ассеты собираются с меткой вида сборки: по ней апдейтер выбирает, что качать.
+      - name: Publish self-contained
+        run: >
+          dotnet publish src/CpuMonitorNotifier -c Release -r win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:EnableCompressionInSingleFile=true
+          -p:DistributionKind=self-contained
+          -o publish/self-contained
+
+      - name: Publish framework-dependent
+        run: >
+          dotnet publish src/CpuMonitorNotifier -c Release -r win-x64
+          --self-contained false
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:DistributionKind=framework
+          -o publish/framework
+
+      - name: Collect assets
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item publish/self-contained/CpuMonitorNotifier.exe dist/CorePulse.exe
+          Copy-Item publish/framework/CpuMonitorNotifier.exe dist/CorePulse-net10.exe
+          # Формат coreutils: "<hash>  <file>" — его читает GitHubReleases.ParseSha256Sums
+          Get-FileHash dist/CorePulse.exe, dist/CorePulse-net10.exe -Algorithm SHA256 |
+            ForEach-Object { '{0}  {1}' -f $_.Hash.ToLower(), (Split-Path $_.Path -Leaf) } |
+            Set-Content dist/SHA256SUMS.txt -Encoding ascii
+
+      - name: Sanity-check the assets
+        shell: pwsh
+        run: |
+          $self = Get-Item dist/CorePulse.exe
+          $fx = Get-Item dist/CorePulse-net10.exe
+          # self-contained несёт весь рантайм (~30+ МБ) поверх того же кода — эта разница в размере
+          # и есть подпись правильной пары. Абсолютный порог не годится: framework-сборка уже ~24 МБ
+          # (в неё входит проекция Windows Runtime, Microsoft.Windows.SDK.NET.dll), и оба размера
+          # поплывут с версиями .NET. Проверяем их относительно друг друга.
+          if ($fx.Length -lt 5MB) { throw "framework-dependent build looks too small: $($fx.Length) bytes" }
+          if (($self.Length - $fx.Length) -lt 15MB) {
+            throw "self-contained ($($self.Length)) should dwarf framework-dependent ($($fx.Length)) — did Collect assets swap them?"
+          }
+          Get-Content dist/SHA256SUMS.txt
+
+      - name: Create release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create $env:GITHUB_REF_NAME
+          dist/CorePulse.exe dist/CorePulse-net10.exe dist/SHA256SUMS.txt
+          --title $env:GITHUB_REF_NAME --generate-notes

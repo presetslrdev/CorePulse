@@ -9,12 +9,40 @@
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6?logo=windows&logoColor=white)](https://www.microsoft.com/windows)
 [![.NET](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![License](https://img.shields.io/badge/license-MIT-3fb950)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.0.0-blue)](#)
+[![Release](https://img.shields.io/github/v/release/presetslrdev/CorePulse?color=blue)](https://github.com/presetslrdev/CorePulse/releases/latest)
 [![Languages](https://img.shields.io/badge/i18n-8%20languages-ff9f43)](#-languages)
 
 </div>
 
 ---
+
+## Download
+
+**[⬇ Download the latest release](https://github.com/presetslrdev/CorePulse/releases/latest)** — no installer, no setup. Unzip nothing; just run it.
+
+| File | Pick this if | Size |
+|---|---|---|
+| **`CorePulse.exe`** | You just want it to run. Nothing else needed. | ~58 MB |
+| `CorePulse-net10.exe` | You already have the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0). | ~24 MB |
+
+CorePulse keeps itself up to date: it checks GitHub for a new release once a day and offers to update
+with one click. You can turn that off in Settings.
+
+### "Windows protected your PC"
+
+CorePulse isn't code-signed yet — a certificate costs a few hundred dollars a year — so SmartScreen
+shows a warning the first time you run it. Click **More info → Run anyway**.
+
+If you'd rather verify the download first, every release ships a `SHA256SUMS.txt`:
+
+```powershell
+Get-FileHash .\CorePulse.exe -Algorithm SHA256
+```
+
+Compare the result with the line for `CorePulse.exe` in `SHA256SUMS.txt`. Note what this does and
+doesn't prove: it confirms your download isn't corrupted or truncated, but since the checksums are
+published alongside the binary, it isn't protection against a compromised GitHub account. The real
+trust anchor is HTTPS and the security of the publishing account.
 
 ## Why CorePulse?
 
@@ -77,7 +105,10 @@ CorePulse reacts to *sustained* load, not noise.
   **color driven by duration** so brief spikes stay calm and only sustained load warms to red.
 - 🌍 **8 languages** — auto-detected from your system, switchable in settings.
 - 🌗 **Light / dark themes** — follows your Windows theme by default, or pin it to Light or Dark.
-- 🚀 **Lightweight & no admin rights** — a single tray app, no drivers, no elevation.
+- ⬆️ **Updates itself** — checks GitHub once a day, updates with one click, and restarts. Optional.
+- 🚀 **Lightweight & no admin rights** — a single tray app, no drivers, no elevation. The only network
+  request it ever makes is the update check (one `GET` to `api.github.com`); there is no telemetry of
+  any kind, and you can turn the check off in Settings.
 - ⚙️ **Configurable** — threshold, duration, cooldown, poll interval, notifications on/off, autostart.
 - 🖱️ **One-click Task Manager** — jump straight to the culprit from the notification.
 
@@ -96,21 +127,33 @@ their culprits.
 
 ## Installation
 
-**Requirements:** Windows 10 or 11, [.NET 10 Runtime](https://dotnet.microsoft.com/download/dotnet/10.0)
-(the Desktop Runtime).
+**Requirements:** Windows 10 or 11. The self-contained `CorePulse.exe` needs nothing else;
+`CorePulse-net10.exe` needs the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0).
+
+Most people should just [download a release](#download). To build it yourself:
 
 ### Build from source
 
 ```powershell
-git clone <your-fork-url> CorePulse
+git clone https://github.com/presetslrdev/CorePulse.git
 cd CorePulse
 dotnet run --project src/CpuMonitorNotifier
 ```
 
-### Publish a single executable
+Builds from source are stamped as such and never self-update.
+
+### Run the tests
 
 ```powershell
-dotnet publish src/CpuMonitorNotifier -c Release -r win-x64 --self-contained false
+dotnet test tests/CorePulse.Tests
+```
+
+### Publish it the way CI does
+
+```powershell
+dotnet publish src/CpuMonitorNotifier -c Release -r win-x64 --self-contained true `
+  -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
+  -p:EnableCompressionInSingleFile=true -p:DistributionKind=self-contained
 ```
 
 ## Usage
@@ -118,7 +161,7 @@ dotnet publish src/CpuMonitorNotifier -c Release -r win-x64 --self-contained fal
 - Look at the tray icon: the number is your hottest core's load; the color tells you how hot.
 - Hover for a tooltip: hottest core, overall CPU, and the greediest process.
 - **Right-click** the icon (or double-click) for **Settings** — choose the icon style, language, theme,
-  alert threshold/duration/cooldown, poll interval, notifications, exclusions, and autostart.
+  alert threshold/duration/cooldown, poll interval, notifications, exclusions, update checks, and autostart.
 - **History** in the menu opens the offenders ranking and alert log (see above).
 - **Test notification** in the menu fires a sample toast right away — handy to confirm notifications
   aren't being swallowed by Windows **Focus Assist / Do Not Disturb**.
@@ -165,7 +208,8 @@ Full breakdown in [docs/ANALOGS.md](docs/ANALOGS.md).
 
 - Precise per-core → per-process attribution via ETW CPU sampling (opt-in, requires elevation).
 - Optional history graph / mini-sparkline in the tooltip.
-- Portable single-file self-contained build.
+- Code signing, to get rid of the SmartScreen warning.
+- winget package (`winget install CorePulse`).
 
 ## Tech stack
 

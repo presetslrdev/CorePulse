@@ -27,6 +27,13 @@ Tray/
 Notifications/ToastNotifier.cs
 Localization/Localization.cs   8-language string tables, English fallback
 Theming/ThemeManager.cs        System/Light/Dark theme via Application.SetColorMode
+Update/
+  UpdateVersions.cs       разбор тега релиза и сравнение версий
+  DistributionInfo.cs     вид сборки, впечатанный CI (source/self-contained/framework)
+  GitHubReleases.cs       чтение /releases/latest + SHA256SUMS.txt
+  UpdateService.cs        решение об обновлении и загрузка с проверкой хеша
+  UpdateInstaller.cs      подмена собственного .exe
+tests/CorePulse.Tests/    юнит-тесты чистой логики обновления
 Settings/
   AppSettings.cs          JSON in %AppData%\CpuMonitorNotifier\settings.json
   AutoStart.cs            HKCU\Software\Microsoft\Windows\CurrentVersion\Run
@@ -102,6 +109,32 @@ effect the next time a window is opened.
 The tray icon is intentionally *not* themed by this setting: it lives on the taskbar (whose color
 follows the Windows theme, not the app's), and its dark rounded backer is verified legible on both
 light and dark taskbars.
+
+### Distribution and updates
+
+CI publishes two single-file win-x64 binaries per tag: `CorePulse.exe` (self-contained, ~58 MB, needs
+no runtime) and `CorePulse-net10.exe` (framework-dependent, ~24 MB — the Windows Runtime projection it needs for toasts ships with it). WinForms does not support trimming,
+so the self-contained size is a floor, not an oversight — it buys the removal of the runtime
+prerequisite, which is the barrier that actually stops people.
+
+Each build is stamped via `AssemblyMetadata` (`-p:DistributionKind=…`), so `UpdateService` knows which
+asset matches the running binary instead of guessing. The default is `source`, which disables updating
+entirely — a developer's local build must never swap itself.
+
+**The swap.** The app updates itself with no helper process, which is possible because of an asymmetry
+in Windows: a running `.exe` **can be renamed** but **cannot be deleted**. So the app renames itself to
+`CorePulse.old.exe`, moves the verified download into place, relaunches with `--updated <pid>`, and
+exits; the new instance waits for that PID (the single-instance mutex would otherwise make it exit
+silently) and deletes the leftover. If the second move fails, the rename is undone and the installation
+survives. If the directory isn't writable — `Program Files`, say — no swap is attempted and the user is
+sent to the release page instead.
+
+**Trust.** The updater pins the repository, uses HTTPS, requires a strictly greater version (no
+downgrade), and verifies SHA256 before touching anything on disk. Being explicit about the limit:
+`SHA256SUMS.txt` ships in the same release as the binary, so it protects against a corrupted download,
+**not** against a compromised GitHub account, which could replace both. The trust anchor is HTTPS plus
+the publishing account. The binaries are unsigned, so SmartScreen warns on first run; the whole check
+can be disabled in Settings, and the app makes no other network request and collects no telemetry.
 
 ### Localization
 
