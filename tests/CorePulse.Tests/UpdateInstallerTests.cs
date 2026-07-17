@@ -76,4 +76,34 @@ public class UpdateInstallerTests : IDisposable
     [Fact]
     public void CurrentExePath_IsAnExistingFile()
         => Assert.True(File.Exists(UpdateInstaller.CurrentExePath));
+
+    [Fact]
+    public void Rollback_SucceedsAndRestoresTheOriginal()
+    {
+        string exe = Path.Combine(_dir, "CorePulse.exe");
+        string old = UpdateInstaller.OldPathFor(exe);
+        File.WriteAllText(old, "original");
+
+        UpdateInstaller.Rollback(old, exe, new IOException("swap failed"));
+
+        Assert.Equal("original", File.ReadAllText(exe));
+        Assert.False(File.Exists(old));
+    }
+
+    [Fact]
+    public void Rollback_WhenItCannotRestore_SaysWhereTheWorkingBinaryIs()
+    {
+        string exe = Path.Combine(_dir, "CorePulse.exe");
+        string old = UpdateInstaller.OldPathFor(exe);
+        File.WriteAllText(old, "original");
+        Directory.CreateDirectory(exe); // каталог на месте .exe — переименовать поверх него нельзя
+
+        var cause = new IOException("swap failed");
+        var ex = Assert.Throws<IOException>(() => UpdateInstaller.Rollback(old, exe, cause));
+
+        // пользователь не должен остаться наедине с пустой папкой: путь к рабочему файлу — в сообщении
+        Assert.Contains(old, ex.Message);
+        Assert.Contains(cause, Assert.IsType<AggregateException>(ex.InnerException).InnerExceptions);
+        Assert.True(File.Exists(old), "the working binary must still exist for the user to restore");
+    }
 }

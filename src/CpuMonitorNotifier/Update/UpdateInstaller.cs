@@ -10,13 +10,19 @@ namespace CpuMonitorNotifier.Update;
 internal static class UpdateInstaller
 {
     private const string OldSuffix = ".old.exe";
+    private const int RollbackAttempts = 3;
+    private const int RollbackDelayMs = 150;
 
     public static string CurrentExePath =>
         Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule!.FileName;
 
     /// <summary>Подменять можно, только если каталог с .exe доступен на запись (иначе — Program Files и т.п.).</summary>
-    public static bool CanSwap() =>
-        IsDirectoryWritable(Path.GetDirectoryName(CurrentExePath) ?? string.Empty);
+    public static bool CanSwap()
+    {
+        string? dir = Path.GetDirectoryName(CurrentExePath);
+        // без каталога проверять нечего: пустая строка увела бы проверку на текущий рабочий каталог
+        return dir is not null && IsDirectoryWritable(dir);
+    }
 
     public static bool IsDirectoryWritable(string dir)
     {
@@ -49,10 +55,10 @@ internal static class UpdateInstaller
         {
             File.Move(newFile, exePath);
         }
-        catch
+        catch (Exception swapFailure)
         {
-            File.Move(old, exePath); // откат
-            throw;
+            Rollback(old, exePath, swapFailure);
+            throw; // откат удался — наружу уходит исходная причина
         }
     }
 
@@ -72,12 +78,41 @@ internal static class UpdateInstaller
         Application.Exit();
     }
 
+    /// <summary>
+    /// Возвращает прежний .exe на место. Единственный момент, когда пользователь может остаться
+    /// вообще без файла, поэтому промах здесь важнее исходной ошибки: типовая причина —
+    /// антивирус, открывший только что переименованный файл, и он обычно отпускает. Если не
+    /// отпустил — говорим прямо, где лежит рабочий файл, вместо молчаливого исчезновения.
+    /// </summary>
+    internal static void Rollback(string old, string exePath, Exception cause)
+    {
+        for (int attempt = 1; attempt <= RollbackAttempts; attempt++)
+        {
+            try
+            {
+                File.Move(old, exePath);
+                return;
+            }
+            catch (Exception rollbackFailure)
+            {
+                if (attempt == RollbackAttempts)
+                    throw new IOException(
+                        $"Update failed and the original could not be restored automatically. " +
+                        $"Your working CorePulse is at '{old}' — rename it back to '{exePath}'.",
+                        new AggregateException(cause, rollbackFailure));
+
+                Thread.Sleep(RollbackDelayMs);
+            }
+        }
+    }
+
     /// <summary>Убирает остаток прошлого обновления. Раньше этого момента удалить файл было нельзя.</summary>
     public static void CleanupOldFile() => TryDelete(OldPathFor(CurrentExePath));
 
     private static void TryDelete(string path)
     {
         try { if (File.Exists(path)) File.Delete(path); }
-        catch { /* файл ещё занят — попробуем при следующем запуске */ }
+        catch (IOException) { /* файл ещё занят — попробуем при следующем запуске */ }
+        catch (UnauthorizedAccessException) { /* нет прав на удаление — не критично */ }
     }
 }
