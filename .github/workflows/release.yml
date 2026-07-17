@@ -52,13 +52,19 @@ jobs:
             ForEach-Object { '{0}  {1}' -f $_.Hash.ToLower(), (Split-Path $_.Path -Leaf) } |
             Set-Content dist/SHA256SUMS.txt -Encoding ascii
 
-      - name: Verify the stamp
+      - name: Sanity-check the assets
         shell: pwsh
         run: |
-          $exe = Get-Item dist/CorePulse.exe
-          if ($exe.Length -lt 20MB) { throw "self-contained build looks too small: $($exe.Length) bytes" }
+          $self = Get-Item dist/CorePulse.exe
           $fx = Get-Item dist/CorePulse-net10.exe
-          if ($fx.Length -gt 20MB) { throw "framework-dependent build looks too big: $($fx.Length) bytes" }
+          # self-contained несёт весь рантайм (~30+ МБ) поверх того же кода — эта разница в размере
+          # и есть подпись правильной пары. Абсолютный порог не годится: framework-сборка уже ~24 МБ
+          # (в неё входит проекция Windows Runtime, Microsoft.Windows.SDK.NET.dll), и оба размера
+          # поплывут с версиями .NET. Проверяем их относительно друг друга.
+          if ($fx.Length -lt 5MB) { throw "framework-dependent build looks too small: $($fx.Length) bytes" }
+          if (($self.Length - $fx.Length) -lt 15MB) {
+            throw "self-contained ($($self.Length)) should dwarf framework-dependent ($($fx.Length)) — did Collect assets swap them?"
+          }
           Get-Content dist/SHA256SUMS.txt
 
       - name: Create release
