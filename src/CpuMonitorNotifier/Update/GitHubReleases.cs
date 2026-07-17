@@ -38,7 +38,7 @@ internal static class GitHubReleases
 
     public static HttpClient CreateClient()
     {
-        var http = new HttpClient { Timeout = TimeSpan.FromMinutes(5) }; // self-contained ассет ~70 МБ
+        var http = new HttpClient { Timeout = TimeSpan.FromMinutes(5) }; // self-contained ассет ~58 МБ
         // без User-Agent GitHub отвечает 403
         http.DefaultRequestHeaders.UserAgent.ParseAdd($"CorePulse/{UpdateVersions.Current}");
         http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
