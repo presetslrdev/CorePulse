@@ -2328,6 +2328,16 @@ then with the **1.5.0** binary still installed in a writable folder:
 4. Verify the new version: the tray menu → "Check for updates…" reports **up to date (1.5.1)**.
 5. Verify settings and history survived: `%AppData%\CpuMonitorNotifier\settings.json` and `history.json` are intact.
 6. Verify cleanup: `CorePulse.old.exe` is gone from the folder after the restart.
+7. **Confirm the tray icon is actually visible** — not merely that a process is alive. Every automated
+   check in tasks 1–10 uses process-liveness as a proxy; a process can survive with a failed icon and
+   no automated check here would catch it.
+
+**This step is the only test of the mutex handoff, and it must be treated as a deliberate target, not
+an incidental one.** Task 6's contended path — the mutex being held *while* `--updated <pid>` was
+passed — is unreachable from any unit test: it needs a real swap against a live instance. That path is
+exactly where the "user clicks Update and ends up with nothing" bug lives, so a successful step 3 (the
+app coming back) IS the test. If the app does not reappear, do not retry blindly — that is the bug,
+and the `AbandonedMutexException → true` branch is the next thing to suspect.
 
 If any step fails, **do not leave a broken release published** — that is the risk this whole design is
 built around. `gh release delete` the bad tag and fix forward.
