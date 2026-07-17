@@ -26,6 +26,10 @@ internal sealed class AppSettings
     // Имена процессов (без .exe), которые не должны вызывать уведомления о нагрузке.
     public List<string> ExcludedProcesses { get; set; } = new();
 
+    // Обновления: единственный сетевой запрос приложения — GET к api.github.com, без телеметрии.
+    public bool UpdateCheckEnabled { get; set; } = true;
+    public DateTime LastUpdateCheckUtc { get; set; } = DateTime.MinValue;
+
     private static readonly string FilePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "CpuMonitorNotifier", "settings.json");

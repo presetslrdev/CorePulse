@@ -2,6 +2,7 @@ using CpuMonitorNotifier.App;
 using CpuMonitorNotifier.Localization;
 using CpuMonitorNotifier.Theming;
 using CpuMonitorNotifier.Tray;
+using CpuMonitorNotifier.Update;
 
 namespace CpuMonitorNotifier.Settings;
 
@@ -51,6 +52,7 @@ internal sealed class SettingsForm : Form
     private readonly CheckBox _notifications;
     private readonly CheckBox _procAlerts;
     private readonly CheckBox _autoStart;
+    private readonly CheckBox? _updateCheck; // null для сборок из исходников — обновлять нечего
     private readonly List<string> _excluded;
 
     public SettingsForm(AppSettings settings)
@@ -61,7 +63,7 @@ internal sealed class SettingsForm : Form
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
         AutoScaleMode = AutoScaleMode.Font;
-        ClientSize = new Size(440, 482);
+        ClientSize = new Size(440, 510);
         try { Icon = System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
         _excluded = new List<string>(settings.ExcludedProcesses);
 
@@ -69,7 +71,7 @@ internal sealed class SettingsForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 2,
-            RowCount = 14,
+            RowCount = 15,
             Padding = new Padding(12),
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 62));
@@ -147,6 +149,18 @@ internal sealed class SettingsForm : Form
         layout.Controls.Add(_autoStart);
         layout.SetColumnSpan(_autoStart, 2);
 
+        if (DistributionInfo.UpdatesSupported)
+        {
+            _updateCheck = new CheckBox
+            {
+                Text = Loc.T("settings.updates"),
+                Checked = settings.UpdateCheckEnabled,
+                AutoSize = true,
+            };
+            layout.Controls.Add(_updateCheck);
+            layout.SetColumnSpan(_updateCheck, 2);
+        }
+
         var buttons = new FlowLayoutPanel
         {
             FlowDirection = FlowDirection.RightToLeft,
@@ -180,6 +194,8 @@ internal sealed class SettingsForm : Form
         settings.NotificationsEnabled = _notifications.Checked;
         settings.ProcessAlertsEnabled = _procAlerts.Checked;
         settings.ExcludedProcesses = new List<string>(_excluded);
+        if (_updateCheck is not null)
+            settings.UpdateCheckEnabled = _updateCheck.Checked;
         AutoStart.IsEnabled = _autoStart.Checked;
     }
 
