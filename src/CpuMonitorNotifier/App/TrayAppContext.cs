@@ -99,7 +99,13 @@ internal sealed class TrayAppContext : ApplicationContext
         OnSample(); // мгновенный первый замер, не дожидаясь секундного тика
 
         _ = _marshal.Handle; // форсируем создание окна, иначе BeginInvoke бросит
-        _notifier.UpdateRequested += () => _marshal.BeginInvoke(() => _ = StartUpdateAsync());
+        _notifier.UpdateRequested += () =>
+        {
+            // тост может активироваться на фоновом потоке уже после ExitApp — тогда _marshal мёртв
+            if (_marshal.IsDisposed) return;
+            try { _marshal.BeginInvoke(() => _ = StartUpdateAsync()); }
+            catch (ObjectDisposedException) { /* закрылись между проверкой и вызовом — не наша забота */ }
+        };
 
         _updateTimer = new System.Windows.Forms.Timer { Interval = FirstUpdateCheckMs };
         _updateTimer.Tick += (_, _) =>
@@ -268,15 +274,20 @@ internal sealed class TrayAppContext : ApplicationContext
     private async Task CheckUpdatesManuallyAsync()
     {
         if (_updating) return;
+        _updating = true; // до любого await: два быстрых клика не должны показать два тоста/диалога
 
-        var result = await _updates.CheckAsync();
-        _settings.LastUpdateCheckUtc = DateTime.UtcNow;
-        TrySaveSettings(); // запись времени — бухгалтерия; её сбой не должен проглотить ответ ниже
+        try
+        {
+            var result = await _updates.CheckAsync();
+            _settings.LastUpdateCheckUtc = DateTime.UtcNow;
+            TrySaveSettings(); // запись времени — бухгалтерия; её сбой не должен проглотить ответ ниже
 
-        if (result.Status == UpdateCheckStatus.UpdateAvailable)
-            OfferUpdate(result.Release!);
-        else
-            ReportCheckOutcome(result.Status);
+            if (result.Status == UpdateCheckStatus.UpdateAvailable)
+                OfferUpdate(result.Release!);
+            else
+                ReportCheckOutcome(result.Status);
+        }
+        finally { _updating = false; }
     }
 
     /// <summary>Показывает исход проверки — только для запрошенных пользователем (ручная проверка, клик по тосту).</summary>
