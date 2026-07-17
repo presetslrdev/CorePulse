@@ -11,7 +11,7 @@
     <Product>CorePulse</Product>
     <ApplicationIcon>..\..\assets\app.ico</ApplicationIcon>
     <Description>Find the process quietly keeping your CPU cores under sustained load — the background usage that heats your machine and spins up your fans.</Description>
-    <Version>1.5.1</Version>
+    <Version>1.5.2</Version>
     <!-- CI переопределяет: -p:DistributionKind=self-contained|framework -->
     <DistributionKind Condition="'$(DistributionKind)' == ''">source</DistributionKind>
   </PropertyGroup>

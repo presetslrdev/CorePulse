@@ -57,7 +57,7 @@ internal sealed class SettingsForm : Form
 
     public SettingsForm(AppSettings settings)
     {
-        Text = string.Format(Loc.T("settings.title"), Loc.AppName);
+        Text = string.Format(Loc.T("settings.title"), Loc.AppName, UpdateVersions.Current);
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;

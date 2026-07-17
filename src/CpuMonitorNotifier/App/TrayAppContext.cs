@@ -283,12 +283,25 @@ internal sealed class TrayAppContext : ApplicationContext
             TrySaveSettings(); // запись времени — бухгалтерия; её сбой не должен проглотить ответ ниже
 
             if (result.Status == UpdateCheckStatus.UpdateAvailable)
-                OfferUpdate(result.Release!);
+            {
+                OfferUpdate(result.Release!); // тост — на случай, если диалог ниже потеряется за окнами
+                if (ConfirmUpdateNow(result.Release!))
+                    _marshal.BeginInvoke(() => _ = StartUpdateAsync()); // после return/finally — иначе гонка за _updating
+            }
             else
                 ReportCheckOutcome(result.Status);
         }
         finally { _updating = false; }
     }
+
+    /// <summary>
+    /// Тост можно не заметить (Focus Assist, фокус на другом окне) — ручная проверка обязана
+    /// показать явный, гарантированно видимый исход, раз пользователь сам её запросил.
+    /// </summary>
+    private static bool ConfirmUpdateNow(ReleaseInfo release) =>
+        MessageBox.Show(
+            string.Format(Loc.T("update.available"), release.Version) + "\n" + Loc.T("update.confirm"),
+            Loc.AppName, MessageBoxButtons.YesNo, MessageBoxIcon.Information) == DialogResult.Yes;
 
     /// <summary>Показывает исход проверки — только для запрошенных пользователем (ручная проверка, клик по тосту).</summary>
     private static void ReportCheckOutcome(UpdateCheckStatus status)
